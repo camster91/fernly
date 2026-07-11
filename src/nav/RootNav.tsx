@@ -1,0 +1,141 @@
+// Root navigation
+// Two layers:
+//   1. Onboarding gate — shows Onboarding until profile.onboarded = true
+//   2. Bottom tab navigator — Today / Chat / Practice / Insights / You
+// Plus a native stack inside for modal flows (MoodCheckIn, Exercise, Settings).
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { TodayScreen } from '../screens/TodayScreen';
+import { ChatScreen } from '../screens/ChatScreen';
+import { PracticeScreen } from '../screens/PracticeScreen';
+import { ExerciseScreen } from '../screens/ExerciseScreen';
+import { InsightsScreen } from '../screens/InsightsScreen';
+import { ProfileScreen } from '../screens/ProfileScreen';
+import { OnboardingScreen } from '../screens/OnboardingScreen';
+import { MoodCheckInScreen } from '../screens/MoodCheckInScreen';
+import { colors, space, type as t } from '../theme';
+import { storage } from '../storage';
+
+import type { NavigatorScreenParams } from '@react-navigation/native';
+
+export type TabParamList = {
+  Today: undefined;
+  Chat: undefined;
+  Practice: undefined;
+  Insights: undefined;
+  You: undefined;
+};
+
+export type RootStackParamList = {
+  Tabs: NavigatorScreenParams<TabParamList>;
+  MoodCheckIn: undefined;
+  Exercise: { exerciseId: string };
+  Settings: undefined;
+};
+
+const Tab = createBottomTabNavigator<TabParamList>();
+const Stack = createNativeStackNavigator<RootStackParamList>();
+
+function TabIcon({ glyph, focused }: { glyph: string; focused: boolean }) {
+  return (
+    <View style={styles.tabIcon}>
+      <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.5 }}>{glyph}</Text>
+    </View>
+  );
+}
+
+function Tabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: styles.tabBar,
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
+      }}
+    >
+      <Tab.Screen
+        name="Today"
+        component={TodayScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="✿" focused={focused} /> }}
+      />
+      <Tab.Screen
+        name="Chat"
+        component={ChatScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="💬" focused={focused} /> }}
+      />
+      <Tab.Screen
+        name="Practice"
+        component={PracticeScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="🧘" focused={focused} /> }}
+      />
+      <Tab.Screen
+        name="Insights"
+        component={InsightsScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="📊" focused={focused} /> }}
+      />
+      <Tab.Screen
+        name="You"
+        component={ProfileScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="👤" focused={focused} /> }}
+      />
+    </Tab.Navigator>
+  );
+}
+
+function LoadingScreen() {
+  return (
+    <View style={styles.loading}>
+      <ActivityIndicator size="large" color={colors.accent} />
+    </View>
+  );
+}
+
+export function RootNav() {
+  const [loaded, setLoaded] = useState(false);
+  const [onboarded, setOnboarded] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const p = await storage.getProfile();
+      setOnboarded(!!p?.onboarded);
+      setLoaded(true);
+    })();
+  }, []);
+
+  if (!loaded) return <LoadingScreen />;
+
+  return (
+    <SafeAreaProvider>
+      <NavigationContainer>
+        {!onboarded ? (
+          <OnboardingScreen onDone={async () => { await storage.setOnboarded(true); setOnboarded(true); }} />
+        ) : (
+          <Stack.Navigator screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="Tabs" component={Tabs} />
+            <Stack.Screen name="MoodCheckIn" component={MoodCheckInScreen} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="Exercise" component={ExerciseScreen} />
+          </Stack.Navigator>
+        )}
+      </NavigationContainer>
+    </SafeAreaProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
+  tabBar: {
+    backgroundColor: colors.paper2,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    paddingTop: 8,
+    paddingBottom: 24,
+    height: 80,
+  },
+  tabIcon: { alignItems: 'center', justifyContent: 'center' },
+});
