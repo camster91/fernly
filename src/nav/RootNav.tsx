@@ -4,7 +4,7 @@
 //   2. Bottom tab navigator — Today / Chat / Practice / Insights / You
 // Plus a native stack inside for modal flows (MoodCheckIn, Exercise, Settings).
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
