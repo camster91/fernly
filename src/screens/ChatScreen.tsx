@@ -18,7 +18,7 @@ import { CrisisModal } from '../components/CrisisModal';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import { detectCrisis } from '../safety/crisis';
-import type { ChatMessage, ChatSession, UserProfile, Tone } from '../types';
+import type { ChatMessage, ChatSession, CrisisAuditEntry, UserProfile, Tone } from '../types';
 
 // Deterministic mock responder — picks a reply based on user input + their tone.
 // NOT an LLM. Replace with real chat backend in build week 3.
@@ -91,18 +91,41 @@ export function ChatScreen() {
       setInput('');
       setCrisisMatched(verdict.matchedPhrase);
       setCrisisVisible(true);
-      // Still persist — these messages are part of the audit trail.
+      // Persist chat history (encrypted via SecureStore in storage.ts).
       const session: ChatSession = {
         id: String(Date.now()),
         startedAt: new Date().toISOString(),
         messages: [...messages, userMsg, blocked],
       };
       await storage.addChat(session);
+      // Separately, append a crisis audit entry. This survives clearAll()
+      // — it's the incident-response trail. Stored in encrypted SecureStore,
+      // schema-versioned via CrisisAuditEntry.version.
+      const audit: CrisisAuditEntry = {
+        version: 1,
+        id: `${Date.now()}-audit`,
+        at: new Date().toISOString(),
+        severity: 'hard',
+        matchedPhrase: verdict.matchedPhrase,
+      };
+      await storage.appendCrisisAudit(audit);
       return;
     }
 
-    // Soft signals still go to the AI; we log a flag in profile for future tuning.
+    // Soft signals still go to the AI; we log a flag in the crisis audit
+    // log (separately from chat history) for future pattern tracking.
     // (v1: surface this as "we noticed something heavy" check-in after the convo.)
+    if (verdict.level === 'soft' && verdict.matchedPhrase) {
+      const softAudit: CrisisAuditEntry = {
+        version: 1,
+        id: `${Date.now()}-audit`,
+        at: new Date().toISOString(),
+        severity: 'soft',
+        matchedPhrase: verdict.matchedPhrase,
+      };
+      // Best-effort, don't block the chat send on this.
+      storage.appendCrisisAudit(softAudit).catch(() => undefined);
+    }
 
     const tone = profile?.tone ?? 'soft';
     const mascot = profile?.mascot ?? 'moon';
