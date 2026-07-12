@@ -48,7 +48,7 @@ const SOFT_PATTERNS: RegExp[] = [
 // False-positive guard: words/phrases that LOOK like crisis but are not.
 // Used to suppress matches.
 const CONTEXT_OVERRIDES: RegExp[] = [
-  /\b(kill(ed|s|ing)?\s+it|killed\s+it)\b/i,                  // "I killed it" (gaming, work)
+  /\b(kill(ed|s|ing)?\s+it|killed\s+it)\b/i, // "I killed it" (gaming, work)
   /\b(die\s+laughing|dying\s+of\s+laughter)\b/i,
   /\b(want\s+to\s+die\s+laughing)\b/i,
   /\b(just\s+exhausted|so\s+tired)\b/i,
@@ -102,7 +102,5 @@ export function crisisResourcesFor(locale: string = 'en-US'): CrisisResource[] {
     ];
   }
   // Fallback
-  return [
-    { name: 'Find a helpline worldwide', url: 'https://findahelpline.com' },
-  ];
+  return [{ name: 'Find a helpline worldwide', url: 'https://findahelpline.com' }];
 }

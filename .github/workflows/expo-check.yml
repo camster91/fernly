@@ -1,0 +1,25 @@
+name: 'updates:'
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly Monday 09:00 UTC
+    - cron: '0 9 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  expo-version:
+    name: Check for SDK 57 dependency updates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Expo install check
+        run: npx expo install --check || echo "Outdated deps found — see log"
