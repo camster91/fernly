@@ -11,11 +11,11 @@ import { exercises } from '../data/exercises';
 import type { RootStackParamList } from '../nav/RootNav';
 
 const MODALITY_COLOR: Record<string, { bg: string; fg: string }> = {
-  CBT:       { bg: colors.lavender100, fg: colors.lavender700 },
-  ACT:       { bg: colors.mint100,     fg: colors.mint700 },
-  GROUNDING: { bg: colors.yellow100,   fg: colors.yellow700 },
-  BODY:      { bg: colors.peach100,    fg: colors.peach500 },
-  REFLECTION:{ bg: colors.rose100,     fg: colors.warn },
+  CBT: { bg: colors.lavender100, fg: colors.lavender700 },
+  ACT: { bg: colors.mint100, fg: '#1c8e58' },
+  GROUNDING: { bg: colors.yellow100, fg: '#8a6500' },
+  BODY: { bg: colors.peach100, fg: colors.peach500 },
+  REFLECTION: { bg: colors.rose100, fg: colors.warn },
 };
 
 export function PracticeScreen() {
@@ -27,7 +27,7 @@ export function PracticeScreen() {
         <Text style={styles.sub}>Pick what fits right now.</Text>
       </View>
 
-      {exercises.map(ex => {
+      {exercises.map((ex) => {
         const tag = MODALITY_COLOR[ex.modality] ?? { bg: colors.line, fg: colors.text };
         return (
           <Card key={ex.id} onPress={() => nav.navigate('Exercise', { exerciseId: ex.id })}>
@@ -54,16 +54,22 @@ export function PracticeScreen() {
 }
 
 const styles = StyleSheet.create({
-  header:    { paddingHorizontal: space.s6, paddingTop: space.s7, paddingBottom: space.s5 },
-  h1:        { ...t.displayLg, color: colors.text, marginBottom: 6 },
-  sub:       { ...t.body, color: colors.textSoft },
+  header: { paddingHorizontal: space.s6, paddingTop: space.s7, paddingBottom: space.s5 },
+  h1: { ...t.displayLg, color: colors.text, marginBottom: 6 },
+  sub: { ...t.body, color: colors.textSoft },
 
-  row:       { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
-  icon:      { width: 48, height: 48, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
+  row: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
+  icon: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   iconEmoji: { fontSize: 24 },
 
-  tagRow:    { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 },
-  tag:       { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full },
-  tagText:   { fontSize: 10, fontWeight: '700', letterSpacing: 0.6 },
-  duration:  { fontFamily: 'Menlo', fontSize: 10, color: colors.textMuted, letterSpacing: 0.5 },
+  tagRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 },
+  tag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full },
+  tagText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.6 },
+  duration: { fontFamily: 'Menlo', fontSize: 10, color: colors.textMuted, letterSpacing: 0.5 },
 });
