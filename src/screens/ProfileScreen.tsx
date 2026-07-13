@@ -2,10 +2,13 @@
 // Avatar (mascot emoji), stats row, settings entries.
 import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import type { UserProfile } from '../types';
+import type { RootStackParamList } from '../nav/RootNav';
 
 const MASCOT_EMOJI: Record<string, string> = {
   moon: '🌙',
@@ -21,6 +24,7 @@ const TONE_LABEL: Record<string, string> = {
 };
 
 export function ProfileScreen() {
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState({ moods: 0, chats: 0, days: 0 });
 
@@ -85,9 +89,28 @@ export function ProfileScreen() {
           await storage.clearAll();
           setProfile(null);
           setStats({ moods: 0, chats: 0, days: 0 });
+          // Propagate the reset to the navigation root so it re-reads
+          // onboarded state and shows the onboarding flow again. Without
+          // this, the user is dropped into an empty tabs UI with no way
+          // back to onboarding.
+          nav.reset({
+            index: 0,
+            routes: [{ name: 'Tabs' }],
+          });
         },
       },
     ]);
+  }
+
+  function showLegal() {
+    // v0.5: Settings screen is out of scope. Until v1 ships the real
+    // Disclaimer / Privacy / EULA pages, show a placeholder modal that
+    // surfaces the build provenance so users can verify what they're
+    // running.
+    Alert.alert(
+      'Fernly — legal & safety',
+      'Fernly is not therapy. If you are in crisis, contact 988 (US) or 116 123 (UK).\n\nFull Disclaimer, Privacy Policy, and EULA land in build week 6. Open-source decision is on the v1 roadmap.',
+    );
   }
 
   return (
@@ -118,7 +141,7 @@ export function ProfileScreen() {
           profile?.goals?.length ? `${profile.goals.length} chosen` : 'Not set',
         )}
         {row('📥', 'Export your data', 'JSON, one tap', exportData)}
-        {row('⚖️', 'Legal & safety', 'Disclaimer · Privacy · EULA')}
+        {row('⚖️', 'Legal & safety', 'Disclaimer · Privacy · EULA', showLegal)}
         {row('🗑', 'Reset Fernly', 'Clear all data', reset)}
       </View>
     </ScreenContainer>

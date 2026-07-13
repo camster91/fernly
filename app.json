@@ -11,7 +11,8 @@
       "bundleIdentifier": "com.fernly.app",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Fernly uses the microphone so you can talk to me instead of typing. Audio is processed on-device and never recorded or sent to a server without your action.",
-        "NSSpeechRecognitionUsageDescription": "Fernly uses speech recognition to transcribe your spoken messages into text."
+        "NSSpeechRecognitionUsageDescription": "Fernly uses speech recognition to transcribe your spoken messages into text.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
