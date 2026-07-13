@@ -78,7 +78,6 @@ export function ChatScreen() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [input, setInput] = useState('');
-  const [recording, setRecording] = useState(false);
   const [crisisVisible, setCrisisVisible] = useState(false);
   const [crisisMatched, setCrisisMatched] = useState<string | undefined>();
   const [isSending, setIsSending] = useState(false);
@@ -304,6 +303,8 @@ export function ChatScreen() {
             <Pressable
               onPress={send}
               disabled={isSending}
+              accessibilityRole="button"
+              accessibilityLabel="Send message"
               style={({ pressed }) => [
                 styles.mic,
                 isSending && styles.micDisabled,
@@ -313,17 +314,16 @@ export function ChatScreen() {
               <Text style={styles.micIcon}>↑</Text>
             </Pressable>
           ) : (
-            <Pressable
-              onPress={() => setRecording((r) => !r)}
-              disabled={isSending}
-              style={({ pressed }) => [
-                styles.mic,
-                recording && styles.micRecording,
-                pressed && !isSending && { opacity: 0.8 },
-              ]}
-            >
-              <Text style={styles.micIcon}>{recording ? '■' : '🎙'}</Text>
-            </Pressable>
+            // v0.4: mic button replaced with a "voice coming soon" stub.
+            // The previous code toggled a `recording` state and turned the
+            // button red, but no audio was captured (no expo-av, no
+            // permission flow). That silently lied about a feature that
+            // doesn't exist — worse in a moment of distress when the user
+            // might rely on voice instead of typing. Until voice ships,
+            // show a non-interactive label so the user knows it's coming.
+            <View style={[styles.mic, styles.micSoon]} accessibilityLabel="Voice coming soon">
+              <Text style={styles.micSoonText}>🎙 soon</Text>
+            </View>
           )}
         </View>
       </KeyboardAvoidingView>
@@ -396,7 +396,7 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, fontSize: 14, color: colors.text, paddingVertical: 8, maxHeight: 120 },
   mic: {
-    width: 38,
+    width: 56,
     height: 38,
     borderRadius: 19,
     backgroundColor: colors.accent,
@@ -404,6 +404,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   micDisabled: { backgroundColor: colors.ink4 },
-  micRecording: { backgroundColor: colors.warn },
+  micSoon: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.line, width: 64 },
+  micSoonText: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
   micIcon: { color: colors.paper, fontSize: 18, fontWeight: '700' },
 });
