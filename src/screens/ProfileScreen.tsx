@@ -29,12 +29,18 @@ export function ProfileScreen() {
       const p = await storage.getProfile();
       setProfile(p);
       const moods = await storage.getMoods();
-      const chats = await storage.getChats();
+      // v0.3: chat stats count from the active session's messages, not
+      // a list-all-sessions call (per-session keys means we don't index
+      // history). getChats() is still called for its legacy-migration
+      // side effect — it pulls v0 users' old data into per-session keys.
+      await storage.getChats();
+      const activeId = await storage.getActiveSessionId();
+      const active = activeId ? await storage.getChatSession(activeId) : null;
       const days =
         moods.length > 0
           ? Math.ceil((Date.now() - new Date(p?.createdAt || Date.now()).getTime()) / 86_400_000)
           : 0;
-      setStats({ moods: moods.length, chats: chats.length, days });
+      setStats({ moods: moods.length, chats: active?.messages.length ?? 0, days });
     })();
   }, []);
 
@@ -61,10 +67,13 @@ export function ProfileScreen() {
 
   async function exportData() {
     const moods = await storage.getMoods();
-    const chats = await storage.getChats();
+    await storage.getChats(); // migrate legacy if present
+    const activeId = await storage.getActiveSessionId();
+    const active = activeId ? await storage.getChatSession(activeId) : null;
+    const chatCount = active?.messages.length ?? 0;
     Alert.alert(
       'Export data',
-      `You have ${moods.length} mood entries and ${chats.length} chat sessions. (JSON export ships in week 2.)`,
+      `You have ${moods.length} mood entries and ${chatCount} messages in your current chat. (JSON export ships in week 2.)`,
     );
   }
 
