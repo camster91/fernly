@@ -15,7 +15,13 @@ export function InsightsScreen() {
   const [moods, setMoods] = useState<MoodEntry[]>([]);
 
   useEffect(() => {
-    (async () => setMoods(await storage.getMoods()))();
+    (async () => {
+      try {
+        setMoods(await storage.getMoods());
+      } catch {
+        setMoods([]);
+      }
+    })();
   }, []);
 
   // Build last 7 days (oldest left, today right)

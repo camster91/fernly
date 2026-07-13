@@ -26,21 +26,19 @@ export function ProfileScreen() {
 
   useEffect(() => {
     (async () => {
-      const p = await storage.getProfile();
-      setProfile(p);
-      const moods = await storage.getMoods();
-      // v0.3: chat stats count from the active session's messages, not
-      // a list-all-sessions call (per-session keys means we don't index
-      // history). getChats() is still called for its legacy-migration
-      // side effect — it pulls v0 users' old data into per-session keys.
-      await storage.getChats();
-      const activeId = await storage.getActiveSessionId();
-      const active = activeId ? await storage.getChatSession(activeId) : null;
-      const days =
-        moods.length > 0
-          ? Math.ceil((Date.now() - new Date(p?.createdAt || Date.now()).getTime()) / 86_400_000)
-          : 0;
-      setStats({ moods: moods.length, chats: active?.messages.length ?? 0, days });
+      try {
+        const p = await storage.getProfile();
+        setProfile(p);
+        const moods = await storage.getMoods();
+        const chats = await storage.getChats();
+        const days =
+          moods.length > 0
+            ? Math.ceil((Date.now() - new Date(p?.createdAt || Date.now()).getTime()) / 86_400_000)
+            : 0;
+        setStats({ moods: moods.length, chats: chats.length, days });
+      } catch {
+        setStats({ moods: 0, chats: 0, days: 0 });
+      }
     })();
   }, []);
 

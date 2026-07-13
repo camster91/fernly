@@ -94,30 +94,36 @@ export function ChatScreen() {
     const controller = new AbortController();
     abortRef.current = controller;
     (async () => {
-      const p = await storage.getProfile();
-      if (cancelled) return;
-      setProfile(p);
-
-      // v0.3: getChats() runs the legacy-blob migration (v0 → v0.3) as
-      // a side effect, then returns []. After migration, the active
-      // session id either points at a migrated session, or is null and
-      // we start fresh.
-      await storage.getChats();
-
-      const id = await storage.getActiveSessionId();
-      if (cancelled) return;
-      if (id) {
-        const session = await storage.getChatSession(id);
+      try {
+        const p = await storage.getProfile();
         if (cancelled) return;
-        if (session) {
-          setActiveSessionId(session.id);
-          setMessages(session.messages);
-        } else {
-          // Active id is stale — clear it.
-          await storage.setActiveSessionId(null);
+        setProfile(p);
+
+        // v0.3: getChats() runs the legacy-blob migration (v0 → v0.3) as
+        // a side effect, then returns []. After migration, the active
+        // session id either points at a migrated session, or is null and
+        // we start fresh.
+        await storage.getChats();
+
+        const id = await storage.getActiveSessionId();
+        if (cancelled) return;
+        if (id) {
+          const session = await storage.getChatSession(id);
+          if (cancelled) return;
+          if (session) {
+            setActiveSessionId(session.id);
+            setMessages(session.messages);
+          } else {
+            // Active id is stale — clear it.
+            await storage.setActiveSessionId(null);
+          }
         }
+      } catch {
+        // Storage layer failed. Render an empty chat so the user can
+        // start fresh rather than seeing the empty state indefinitely.
+      } finally {
+        if (!cancelled) setLoaded(true);
       }
-      setLoaded(true);
     })();
     return () => {
       cancelled = true;
