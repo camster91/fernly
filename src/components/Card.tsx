@@ -1,5 +1,13 @@
 // Card primitive — the workhorse component.
 // Variants: default (paper-on-paper), soft (pastel), with optional press handler.
+//
+// Also exports a `styles` const with eyebrow/title/sub text styles. Three
+// callers (TodayScreen, InsightsScreen, PracticeScreen) consume both the
+// component and the styles via `import { Card, styles as cardStyles }`.
+// A compound `Card.Header` / `Card.Title` / `Card.Sub` refactor would
+// eliminate the alias but require touching all 3 callers + MoodCheckIn +
+// OnboardingScreen + ProfileScreen. Out of scope for the polish pass;
+// tracked as P3 #39 for a future cleanup PR.
 import React from 'react';
 import { Pressable, StyleSheet, View, ViewStyle } from 'react-native';
 import { colors, radius, space } from '../theme';

@@ -1,5 +1,6 @@
-// Root component — mounts StatusBar, kicks off the crisis-resource
-// reachability check (best-effort, never blocks UI), then renders RootNav.
+// Root component — mounts the StatusBar, kicks off the crisis-resource
+// reachability check (best-effort, never blocks UI), then renders the
+// navigator. See src/nav/RootNav.tsx for the navigation hierarchy.
 import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { RootNav } from './src/nav/RootNav';
