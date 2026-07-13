@@ -26,6 +26,15 @@ export function TodayScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [todayMood, setTodayMood] = useState<MoodEntry | null>(null);
   const [streak, setStreak] = useState(0);
+  const [weekLog, setWeekLog] = useState<boolean[]>([
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+  ]);
 
   useEffect(() => {
     (async () => {
@@ -48,6 +57,18 @@ export function TodayScreen() {
           } else break;
         }
         setStreak(count);
+        // Week strip: 7 booleans, oldest left, today right. Index 0 is
+        // 6 days ago, index 6 is today. JS getDay(): 0=Sun..6=Sat.
+        // The WEEKDAYS label array is [M,T,W,T,F,S,S]; mapping index 0
+        // of the strip to label "M" requires that "today" sit at index 6
+        // and labels run M..S. We compute it by walking back from today.
+        const strip: boolean[] = [];
+        for (let i = 6; i >= 0; i--) {
+          const day = new Date();
+          day.setDate(day.getDate() - i);
+          strip.push(moodDates.has(day.toISOString().slice(0, 10)));
+        }
+        setWeekLog(strip);
       } catch {
         // Storage layer failed (native module not linked, etc.).
         // Render the screen with empty state rather than crashing.
@@ -75,8 +96,18 @@ export function TodayScreen() {
 
       <View style={styles.streakStrip}>
         {WEEKDAYS.map((d, i) => {
-          const done = i < streak % 7 || (streak >= 7 && i < 7);
-          const today = i === new Date().getDay() - 1;
+          // Today sits at strip index 6 (rightmost). The dot label M..S
+          // aligns with the day-of-week of the day at strip[i]. The first
+          // dot (index 0) is 6 days ago — its label depends on what
+          // weekday that was. We compute the label from the date itself
+          // instead of trusting a static M..S array (which is wrong
+          // whenever today isn't Sunday).
+          const date = new Date();
+          date.setDate(date.getDate() - (6 - i));
+          const dow = date.getDay(); // 0=Sun..6=Sat
+          const label = WEEKDAYS[(dow + 6) % 7]; // 0=Sun→6(Sat), 1=Mon→0(M)
+          const done = weekLog[i];
+          const today = i === 6;
           return (
             <View key={i} style={styles.streakDay}>
               <View
@@ -86,7 +117,7 @@ export function TodayScreen() {
                   today && styles.streakDotToday,
                 ]}
               />
-              <Text style={styles.streakLabel}>{d}</Text>
+              <Text style={styles.streakLabel}>{label}</Text>
             </View>
           );
         })}
