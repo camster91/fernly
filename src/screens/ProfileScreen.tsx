@@ -2,13 +2,10 @@
 // Avatar (mascot emoji), stats row, settings entries.
 import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import type { UserProfile } from '../types';
-import type { RootStackParamList } from '../nav/RootNav';
 
 const MASCOT_EMOJI: Record<string, string> = {
   moon: '🌙',
@@ -24,7 +21,6 @@ const TONE_LABEL: Record<string, string> = {
 };
 
 export function ProfileScreen() {
-  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState({ moods: 0, chats: 0, days: 0 });
 
@@ -89,14 +85,12 @@ export function ProfileScreen() {
           await storage.clearAll();
           setProfile(null);
           setStats({ moods: 0, chats: 0, days: 0 });
-          // Propagate the reset to the navigation root so it re-reads
-          // onboarded state and shows the onboarding flow again. Without
-          // this, the user is dropped into an empty tabs UI with no way
-          // back to onboarding.
-          nav.reset({
-            index: 0,
-            routes: [{ name: 'Tabs' }],
-          });
+          // The storage.clearAll() above emits a 'reset' event that
+          // RootNav subscribes to. RootNav re-reads the (now-empty)
+          // profile and flips onboarded=false, which causes the
+          // NavigationContainer to swap the Stack for OnboardingScreen.
+          // No nav.reset() needed — the conditional render in RootNav
+          // handles the route swap.
         },
       },
     ]);
