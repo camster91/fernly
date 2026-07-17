@@ -12,8 +12,8 @@ import type { RootStackParamList } from '../nav/RootNav';
 
 const MODALITY_COLOR: Record<string, { bg: string; fg: string }> = {
   CBT:       { bg: colors.lavender100, fg: colors.lavender700 },
-  ACT:       { bg: colors.mint100,     fg: '#1c8e58' },
-  GROUNDING: { bg: colors.yellow100,   fg: '#8a6500' },
+  ACT:       { bg: colors.mint100,     fg: colors.mint700 },
+  GROUNDING: { bg: colors.yellow100,   fg: colors.yellow700 },
   BODY:      { bg: colors.peach100,    fg: colors.peach500 },
   REFLECTION:{ bg: colors.rose100,     fg: colors.warn },
 };
