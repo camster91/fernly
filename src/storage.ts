@@ -71,6 +71,11 @@ const ASYNC_KEYS = {
   sessions: '@fernly/sessions',
   onboarding: '@fernly/onboarding-complete',
   activeSessionId: '@fernly/active-session-id',
+  // v0.6: list of all per-session SecureStore keys that ever held chat
+  // history for this install. AsyncStorage-only (low-sensitivity). Used
+  // by clearAll() to enumerate and delete every per-session key, since
+  // SecureStore has no list API.
+  sessionKeyIndex: '@fernly/session-key-index',
 } as const;
 
 // ---- SecureStore keys (encrypted, device-bound) ----
@@ -303,6 +308,19 @@ export const storage = {
     };
     await secureSet(sessionKey(id), session);
     await storage.setActiveSessionId(id);
+    // Record this session's key in the index so clearAll() can find it.
+    // Best-effort — if this fails the key is still deleted on next clear
+    // because the index is just a hint.
+    try {
+      const raw = await AsyncStorage.getItem(ASYNC_KEYS.sessionKeyIndex);
+      const list: string[] = raw ? JSON.parse(raw) : [];
+      if (!list.includes(sessionKey(id))) {
+        list.push(sessionKey(id));
+        await AsyncStorage.setItem(ASYNC_KEYS.sessionKeyIndex, JSON.stringify(list));
+      }
+    } catch {
+      // ignore — index corruption doesn't block writes
+    }
     return session;
   },
 
@@ -358,13 +376,20 @@ export const storage = {
     await AsyncStorage.multiRemove(Object.values(ASYNC_KEYS));
     // Best-effort wipe of legacy blob.
     await secureDelete(SECURE_KEYS.chats);
-    // Active session per-key wipe — only known if set, but we just
-    // removed activeSessionId above so we can't reach it. The SecureStore
-    // entries will be orphaned but inaccessible (activeSessionId points
-    // to nothing). For full hygiene, a future maintenance task could
-    // enumerate SecureStore keys, but SecureStore has no list API.
-    // Acceptable for v0: orphaned per-session keys cost a few KB each
-    // and never get read because activeSessionId is gone.
+    // v0.6: enumerate and delete every per-session SecureStore key.
+    // SecureStore has no list API, so we maintain an index in AsyncStorage
+    // that records each sessionKey() we've created. clearAll() drains it.
+    // Any keys that pre-date the index (e.g. user upgraded from v0.5)
+    // are orphans — they stay in the keychain but become unreachable
+    // because activeSessionId is gone. Acceptable trade-off: the next
+    // session created starts a fresh index.
+    try {
+      const raw = await AsyncStorage.getItem(ASYNC_KEYS.sessionKeyIndex);
+      const list: string[] = raw ? JSON.parse(raw) : [];
+      await Promise.allSettled(list.map((k) => SecureStore.deleteItemAsync(k, SECURE_OPTIONS)));
+    } catch {
+      // ignore — if the index is corrupt or empty, nothing more to wipe
+    }
     //
     // NOTE: SECURE_KEYS.crisisAudit is intentionally NOT deleted here.
     //

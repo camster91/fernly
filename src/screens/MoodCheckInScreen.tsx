@@ -1,7 +1,7 @@
 // Mood Check-In — the 30-second flow from the Today card
 // 4-step: pick emoji, optional word, optional note, save
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { MoodPicker, moodLabel } from '../components/MoodPicker';
@@ -33,8 +33,20 @@ export function MoodCheckInScreen() {
       score,
       word,
     };
-    await storage.addMood(entry);
-    nav.goBack();
+    try {
+      await storage.addMood(entry);
+      nav.goBack();
+    } catch {
+      // Storage layer failed (SecureStore/AsyncStorage unavailable,
+      // disk full, etc.). Show the user a clear failure rather than
+      // silently leaving them stuck on the screen with a disabled
+      // Save button.
+      Alert.alert(
+        "Couldn't save your check-in",
+        'Please try again in a moment. If this keeps happening, try restarting the app.',
+        [{ text: 'OK' }],
+      );
+    }
   }
 
   return (
