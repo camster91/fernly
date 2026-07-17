@@ -3,10 +3,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { UserProfile, MoodEntry, ChatSession } from './types';
 
 const KEYS = {
-  profile:    '@fernly/profile',
-  moods:      '@fernly/moods',
-  sessions:   '@fernly/sessions',
-  chats:      '@fernly/chats',
+  profile: '@fernly/profile',
+  moods: '@fernly/moods',
+  sessions: '@fernly/sessions',
+  chats: '@fernly/chats',
   onboarding: '@fernly/onboarding-complete',
 } as const;
 
@@ -24,7 +24,7 @@ export const storage = {
   },
   async addMood(m: MoodEntry) {
     const all = await storage.getMoods();
-    const filtered = all.filter(x => x.date !== m.date);
+    const filtered = all.filter((x) => x.date !== m.date);
     await AsyncStorage.setItem(KEYS.moods, JSON.stringify([m, ...filtered]));
   },
   async getChats(): Promise<ChatSession[]> {

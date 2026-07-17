@@ -4,7 +4,7 @@
 //   2. Bottom tab navigator — Today / Chat / Practice / Insights / You
 // Plus a native stack inside for modal flows (MoodCheckIn, Exercise, Settings).
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -17,7 +17,7 @@ import { InsightsScreen } from '../screens/InsightsScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { MoodCheckInScreen } from '../screens/MoodCheckInScreen';
-import { colors, space, type as t } from '../theme';
+import { colors } from '../theme';
 import { storage } from '../storage';
 
 import type { NavigatorScreenParams } from '@react-navigation/native';
@@ -114,11 +114,20 @@ export function RootNav() {
     <SafeAreaProvider>
       <NavigationContainer>
         {!onboarded ? (
-          <OnboardingScreen onDone={async () => { await storage.setOnboarded(true); setOnboarded(true); }} />
+          <OnboardingScreen
+            onDone={async () => {
+              await storage.setOnboarded(true);
+              setOnboarded(true);
+            }}
+          />
         ) : (
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Tabs" component={Tabs} />
-            <Stack.Screen name="MoodCheckIn" component={MoodCheckInScreen} options={{ presentation: 'modal' }} />
+            <Stack.Screen
+              name="MoodCheckIn"
+              component={MoodCheckInScreen}
+              options={{ presentation: 'modal' }}
+            />
             <Stack.Screen name="Exercise" component={ExerciseScreen} />
           </Stack.Navigator>
         )}

@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+    groups:
+      # Expo SDK packages are tightly versioned — bundle into one PR to
+      # avoid drift. Pin via `expo install --check` in CI; Dependabot
+      # follows npm semver but Expo's installer reconciles versions.
+      expo-sdk:
+        patterns:
+          - 'expo'
+          - 'expo-*'
+          - '@expo/*'
+      react-navigation:
+        patterns:
+          - '@react-navigation/*'
+      react-native:
+        patterns:
+          - 'react-native'
+          - 'react-native-*'
+      # Everything else updates individually.

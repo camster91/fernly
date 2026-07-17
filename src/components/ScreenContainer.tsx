@@ -31,8 +31,8 @@ export function ScreenContainer({ children, scroll = true, style, edges = ['top'
 }
 
 const styles = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: colors.bg },
-  scroll:  { flex: 1 },
+  safe: { flex: 1, backgroundColor: colors.bg },
+  scroll: { flex: 1 },
   content: { paddingBottom: space.s9 + 60 /* tab bar */ },
-  fixed:   { flex: 1 },
+  fixed: { flex: 1 },
 });

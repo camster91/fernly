@@ -8,34 +8,50 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ScreenContainer } from '../components/ScreenContainer';
-import { Card } from '../components/Card';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import type { Goal, Mascot, Tone, UserProfile } from '../types';
 
 const MOOD_CHOICES = ['Anxious', 'Numb', 'Tired', 'Hopeful', 'Overwhelmed', 'Okay', 'Lonely'];
 const GOALS: { id: Goal; label: string }[] = [
-  { id: 'sleep',            label: '💤 Sleep better' },
-  { id: 'quiet_thoughts',   label: '🧠 Quiet my thoughts' },
-  { id: 'less_anxious',     label: '💪 Feel less anxious' },
-  { id: 'self_kindness',    label: '❤️ Be kinder to me' },
+  { id: 'sleep', label: '💤 Sleep better' },
+  { id: 'quiet_thoughts', label: '🧠 Quiet my thoughts' },
+  { id: 'less_anxious', label: '💪 Feel less anxious' },
+  { id: 'self_kindness', label: '❤️ Be kinder to me' },
   { id: 'process_feelings', label: '📓 Process feelings' },
-  { id: 'build_habit',      label: '✨ Build a habit' },
-  { id: 'just_explore',     label: '🎯 Just see' },
+  { id: 'build_habit', label: '✨ Build a habit' },
+  { id: 'just_explore', label: '🎯 Just see' },
 ];
 const MASCOTS: { id: Mascot; emoji: string }[] = [
-  { id: 'moon',   emoji: '🌙' },
-  { id: 'fox',    emoji: '🦊' },
+  { id: 'moon', emoji: '🌙' },
+  { id: 'fox', emoji: '🦊' },
   { id: 'turtle', emoji: '🐢' },
-  { id: 'bee',    emoji: '🐝' },
+  { id: 'bee', emoji: '🐝' },
 ];
 const TONES: { id: Tone; label: string; sample: string; bg: string }[] = [
-  { id: 'soft',    label: '🕊 Soft',    sample: '"That sounds heavy. Want to sit with it?"', bg: colors.lavender50 },
-  { id: 'direct',  label: '⚡ Direct',  sample: '"Let\'s do the thought record. 3 minutes."', bg: colors.peach50 },
-  { id: 'playful', label: '✨ Playful', sample: '"your brain is doing the thing again lol"', bg: colors.yellow50 },
+  {
+    id: 'soft',
+    label: '🕊 Soft',
+    sample: '"That sounds heavy. Want to sit with it?"',
+    bg: colors.lavender50,
+  },
+  {
+    id: 'direct',
+    label: '⚡ Direct',
+    sample: '"Let\'s do the thought record. 3 minutes."',
+    bg: colors.peach50,
+  },
+  {
+    id: 'playful',
+    label: '✨ Playful',
+    sample: '"your brain is doing the thing again lol"',
+    bg: colors.yellow50,
+  },
 ];
 
-interface Props { onDone: () => void; }
+interface Props {
+  onDone: () => void;
+}
 
 export function OnboardingScreen({ onDone }: Props) {
   const [step, setStep] = useState(0);
@@ -46,11 +62,16 @@ export function OnboardingScreen({ onDone }: Props) {
   const [tone, setTone] = useState<Tone>('soft');
 
   const total = 5;
-  function next() { if (step < total) setStep(s => s + 1); else save(); }
-  function back() { if (step > 0) setStep(s => s - 1); }
+  function next() {
+    if (step < total) setStep((s) => s + 1);
+    else save();
+  }
+  function back() {
+    if (step > 0) setStep((s) => s - 1);
+  }
 
   function toggleGoal(id: Goal) {
-    setGoals(g => g.includes(id) ? g.filter(x => x !== id) : g.length < 3 ? [...g, id] : g);
+    setGoals((g) => (g.includes(id) ? g.filter((x) => x !== id) : g.length < 3 ? [...g, id] : g));
   }
 
   async function save() {
@@ -70,8 +91,8 @@ export function OnboardingScreen({ onDone }: Props) {
     if (step === 0) return name.trim().length > 0;
     if (step === 1) return mood !== null;
     if (step === 2) return goals.length > 0;
-    if (step === 3) return true;  // mascot has default
-    if (step === 4) return true;  // tone has default
+    if (step === 3) return true; // mascot has default
+    if (step === 4) return true; // tone has default
     return true;
   };
 
@@ -79,11 +100,18 @@ export function OnboardingScreen({ onDone }: Props) {
     <ScreenContainer scroll={false}>
       <View style={styles.dots}>
         {Array.from({ length: total }).map((_, i) => (
-          <View key={i} style={[styles.dot, i < step && styles.dotDone, i === step && styles.dotActive]} />
+          <View
+            key={i}
+            style={[styles.dot, i < step && styles.dotDone, i === step && styles.dotActive]}
+          />
         ))}
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        showsVerticalScrollIndicator={false}
+      >
         {step === 0 && (
           <Step title="What should Fernly call you?" eyebrow="STEP 1 OF 5">
             <TextInput
@@ -103,7 +131,7 @@ export function OnboardingScreen({ onDone }: Props) {
           <Step title="Right now, what's closest?" eyebrow="STEP 2 OF 5">
             <Text style={styles.sub}>Helps Fernly meet you where you are.</Text>
             <View style={styles.pillRow}>
-              {MOOD_CHOICES.map(m => (
+              {MOOD_CHOICES.map((m) => (
                 <Pressable
                   key={m}
                   onPress={() => setMood(m)}
@@ -120,13 +148,15 @@ export function OnboardingScreen({ onDone }: Props) {
           <Step title="What are you hoping for?" eyebrow="STEP 3 OF 5">
             <Text style={styles.sub}>Pick up to 3.</Text>
             <View style={styles.pillRow}>
-              {GOALS.map(g => (
+              {GOALS.map((g) => (
                 <Pressable
                   key={g.id}
                   onPress={() => toggleGoal(g.id)}
                   style={[styles.pill, goals.includes(g.id) && styles.pillActive]}
                 >
-                  <Text style={[styles.pillText, goals.includes(g.id) && styles.pillTextActive]}>{g.label}</Text>
+                  <Text style={[styles.pillText, goals.includes(g.id) && styles.pillTextActive]}>
+                    {g.label}
+                  </Text>
                 </Pressable>
               ))}
             </View>
@@ -137,7 +167,7 @@ export function OnboardingScreen({ onDone }: Props) {
           <Step title="Pick a friend." eyebrow="STEP 4 OF 5">
             <Text style={styles.sub}>This is who you'll chat with.</Text>
             <View style={styles.mascotGrid}>
-              {MASCOTS.map(m => (
+              {MASCOTS.map((m) => (
                 <Pressable
                   key={m.id}
                   onPress={() => setMascot(m.id)}
@@ -154,11 +184,15 @@ export function OnboardingScreen({ onDone }: Props) {
           <Step title="How should Fernly talk?" eyebrow="STEP 5 OF 5">
             <Text style={styles.sub}>Change anytime in settings.</Text>
             <View style={{ gap: 10 }}>
-              {TONES.map(tn => (
+              {TONES.map((tn) => (
                 <Pressable
                   key={tn.id}
                   onPress={() => setTone(tn.id)}
-                  style={[styles.toneCard, { backgroundColor: tn.bg }, tone === tn.id && styles.toneCardActive]}
+                  style={[
+                    styles.toneCard,
+                    { backgroundColor: tn.bg },
+                    tone === tn.id && styles.toneCardActive,
+                  ]}
                 >
                   <Text style={styles.toneLabel}>{tn.label}</Text>
                   <Text style={styles.toneSample}>{tn.sample}</Text>
@@ -170,11 +204,19 @@ export function OnboardingScreen({ onDone }: Props) {
       </ScrollView>
 
       <View style={styles.footer}>
-        {step > 0 && <Pressable onPress={back} style={styles.back}><Text style={styles.backText}>Back</Text></Pressable>}
+        {step > 0 && (
+          <Pressable onPress={back} style={styles.back}>
+            <Text style={styles.backText}>Back</Text>
+          </Pressable>
+        )}
         <Pressable
           onPress={next}
           disabled={!canAdvance()}
-          style={({ pressed }) => [styles.cta, !canAdvance() && styles.ctaDisabled, pressed && { opacity: 0.85 }]}
+          style={({ pressed }) => [
+            styles.cta,
+            !canAdvance() && styles.ctaDisabled,
+            pressed && { opacity: 0.85 },
+          ]}
         >
           <Text style={styles.ctaText}>{step === total - 1 ? 'Begin' : 'Next'}</Text>
         </Pressable>
@@ -183,7 +225,15 @@ export function OnboardingScreen({ onDone }: Props) {
   );
 }
 
-function Step({ title, eyebrow, children }: { title: string; eyebrow: string; children: React.ReactNode }) {
+function Step({
+  title,
+  eyebrow,
+  children,
+}: {
+  title: string;
+  eyebrow: string;
+  children: React.ReactNode;
+}) {
   return (
     <View style={styles.stepWrap}>
       <Text style={styles.eyebrow}>{eyebrow}</Text>
@@ -194,38 +244,85 @@ function Step({ title, eyebrow, children }: { title: string; eyebrow: string; ch
 }
 
 const styles = StyleSheet.create({
-  stepWrap:    { paddingHorizontal: space.s6, paddingTop: space.s7 },
-  eyebrow:     { ...t.eyebrow, color: colors.lavender700, marginBottom: space.s2 },
-  title:       { ...t.displayLg, color: colors.text, marginBottom: space.s3 },
-  sub:         { ...t.body, color: colors.textSoft, marginBottom: space.s5 },
+  stepWrap: { paddingHorizontal: space.s6, paddingTop: space.s7 },
+  eyebrow: { ...t.eyebrow, color: colors.lavender700, marginBottom: space.s2 },
+  title: { ...t.displayLg, color: colors.text, marginBottom: space.s3 },
+  sub: { ...t.body, color: colors.textSoft, marginBottom: space.s5 },
 
-  input:       { backgroundColor: colors.paper2, borderRadius: radius.md, padding: 16, fontSize: 18, color: colors.text, borderWidth: 1, borderColor: colors.line },
+  input: {
+    backgroundColor: colors.paper2,
+    borderRadius: radius.md,
+    padding: 16,
+    fontSize: 18,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
 
-  pillRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  pill:        { paddingHorizontal: 16, paddingVertical: 10, borderRadius: radius.full, backgroundColor: colors.paper2, borderWidth: 1, borderColor: colors.line },
-  pillActive:  { backgroundColor: colors.accent, borderColor: colors.accent },
-  pillText:    { fontSize: 14, fontWeight: '600', color: colors.text },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  pill: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: radius.full,
+    backgroundColor: colors.paper2,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  pillActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  pillText: { fontSize: 14, fontWeight: '600', color: colors.text },
   pillTextActive: { color: colors.paper },
 
-  mascotGrid:  { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  mascotBox:   { width: '48%', aspectRatio: 1, backgroundColor: colors.lavender50, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
+  mascotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  mascotBox: {
+    width: '48%',
+    aspectRatio: 1,
+    backgroundColor: colors.lavender50,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
   mascotBoxActive: { borderColor: colors.accent },
   mascotEmoji: { fontSize: 48 },
 
-  toneCard:    { padding: 14, borderRadius: radius.md, borderWidth: 2, borderColor: 'transparent' },
+  toneCard: { padding: 14, borderRadius: radius.md, borderWidth: 2, borderColor: 'transparent' },
   toneCardActive: { borderColor: colors.accent },
-  toneLabel:   { fontWeight: '700', fontSize: 16, color: colors.text, marginBottom: 4 },
-  toneSample:  { fontSize: 13, color: colors.textSoft, fontStyle: 'italic' },
+  toneLabel: { fontWeight: '700', fontSize: 16, color: colors.text, marginBottom: 4 },
+  toneSample: { fontSize: 13, color: colors.textSoft, fontStyle: 'italic' },
 
-  dots:        { flexDirection: 'row', justifyContent: 'center', gap: 6, paddingTop: space.s7, paddingBottom: space.s3 },
-  dot:         { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.line },
-  dotDone:     { backgroundColor: colors.mint300 },
-  dotActive:   { backgroundColor: colors.accent, width: 22, borderRadius: 4 },
+  dots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    paddingTop: space.s7,
+    paddingBottom: space.s3,
+  },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.line },
+  dotDone: { backgroundColor: colors.mint300 },
+  dotActive: { backgroundColor: colors.accent, width: 22, borderRadius: 4 },
 
-  footer:      { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: space.s6, paddingTop: 12, paddingBottom: 32, backgroundColor: colors.bg, flexDirection: 'row', gap: 12 },
-  back:        { paddingVertical: 16, paddingHorizontal: 20 },
-  backText:    { ...t.bodyBold, color: colors.textSoft },
-  cta:         { flex: 1, backgroundColor: colors.ink, borderRadius: radius.full, paddingVertical: 18, alignItems: 'center' },
+  footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: space.s6,
+    paddingTop: 12,
+    paddingBottom: 32,
+    backgroundColor: colors.bg,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  back: { paddingVertical: 16, paddingHorizontal: 20 },
+  backText: { ...t.bodyBold, color: colors.textSoft },
+  cta: {
+    flex: 1,
+    backgroundColor: colors.ink,
+    borderRadius: radius.full,
+    paddingVertical: 18,
+    alignItems: 'center',
+  },
   ctaDisabled: { backgroundColor: colors.ink4 },
-  ctaText:     { color: colors.paper, fontWeight: '700', fontSize: 16 },
+  ctaText: { color: colors.paper, fontWeight: '700', fontSize: 16 },
 });

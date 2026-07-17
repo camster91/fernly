@@ -8,13 +8,13 @@
 
 ## What's in this repo
 
-| Path | What it is |
-|---|---|
-| `App.tsx`, `src/` | The working Expo app (SDK 57, React Native 0.86, React 19.2) |
-| `spec/index.html` | Design system + 30 screen mocks + 4 brand mark explorations. Open in a browser. |
-| `spec/build/*.png` | Screenshots of the live v0 on a phone-sized viewport |
-| `plans/01-product-plan.md` | The product plan: positioning, stack, 8-week arc, risks |
-| `plans/02-naming-decision.md` | How we landed on Fernly (Tide → Olio → Fernly) |
+| Path                          | What it is                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------- |
+| `App.tsx`, `src/`             | The working Expo app (SDK 57, React Native 0.86, React 19.2)                    |
+| `spec/index.html`             | Design system + 30 screen mocks + 4 brand mark explorations. Open in a browser. |
+| `spec/build/*.png`            | Screenshots of the live v0 on a phone-sized viewport                            |
+| `plans/01-product-plan.md`    | The product plan: positioning, stack, 8-week arc, risks                         |
+| `plans/02-naming-decision.md` | How we landed on Fernly (Tide → Olio → Fernly)                                  |
 
 ---
 
@@ -60,14 +60,14 @@ npx expo start --ios
 
 Soft pastel palette. Lavender as primary accent, peach/yellow/mint/rose as accent backgrounds. Inter + Nunito (system fallback in v0). All tokens defined in `src/theme.ts` and mirrored in `spec/index.html`.
 
-| Token | Hex | Use |
-|---|---|---|
+| Token         | Hex       | Use                                         |
+| ------------- | --------- | ------------------------------------------- |
 | `lavender500` | `#9B7DD4` | Primary accent · buttons, links, key states |
-| `peach500` | `#F5895A` | Warm accent, streak celebration |
-| `mint300` | `#8FDDB4` | Success, completed states |
-| `rose500` | `#E55D75` | Warnings, crisis, recording |
-| `ink` | `#2A2438` | Primary text |
-| `paper` | `#FBF9F6` | App background · warm, never pure white |
+| `peach500`    | `#F5895A` | Warm accent, streak celebration             |
+| `mint300`     | `#8FDDB4` | Success, completed states                   |
+| `rose500`     | `#E55D75` | Warnings, crisis, recording                 |
+| `ink`         | `#2A2438` | Primary text                                |
+| `paper`       | `#FBF9F6` | App background · warm, never pure white     |
 
 ---
 

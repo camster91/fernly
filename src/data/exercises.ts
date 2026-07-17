@@ -11,7 +11,8 @@ export const exercises: ExerciseDef[] = [
     durationMin: 5,
     emoji: '📝',
     blurb: 'Catch, examine, reframe one thought',
-    description: 'A classic CBT exercise. Notice a hot thought, find the distortion, write a reframe.',
+    description:
+      'A classic CBT exercise. Notice a hot thought, find the distortion, write a reframe.',
   },
   {
     id: 'box-breathing',
@@ -29,7 +30,8 @@ export const exercises: ExerciseDef[] = [
     durationMin: 3,
     emoji: '🌊',
     blurb: '"I\'m having the thought that…" — unhook from it',
-    description: 'Notice a sticky thought. Add "I\'m having the thought that…" in front. Watch it become an object.',
+    description:
+      'Notice a sticky thought. Add "I\'m having the thought that…" in front. Watch it become an object.',
   },
   {
     id: 'values-sort',
@@ -65,7 +67,8 @@ export const exercises: ExerciseDef[] = [
     durationMin: 3,
     emoji: '⏸',
     blurb: 'Name the worry, park it for later',
-    description: 'When worry shows up uninvited, give it a scheduled slot — usually it shrinks by then.',
+    description:
+      'When worry shows up uninvited, give it a scheduled slot — usually it shrinks by then.',
   },
   {
     id: 'body-scan',
@@ -79,5 +82,5 @@ export const exercises: ExerciseDef[] = [
 ];
 
 export function getExercise(id: string): ExerciseDef | undefined {
-  return exercises.find(e => e.id === id);
+  return exercises.find((e) => e.id === id);
 }
