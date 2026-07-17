@@ -58,29 +58,40 @@ const PHASES: { phase: Phase; label: string; seconds: number }[] = [
 ];
 
 function BoxBreathingScreen() {
-  const [cycle, setCycle] = useState(0);
-  const [seconds, setSeconds] = useState(PHASES[0].seconds);
+  // v0.5: combined phase+seconds into a single state object so the
+  // setInterval can use only functional updaters. Previously the
+  // effect deps included `cycle`, which meant the interval was torn
+  // down and rebuilt every 4 seconds when the phase advanced. Now
+  // the effect deps are just `[running]`, and the interval stays
+  // alive for the entire session.
+  type State = { phaseIndex: number; secondsLeft: number };
+  const [{ phaseIndex, secondsLeft }, setState] = useState<State>({
+    phaseIndex: 0,
+    secondsLeft: PHASES[0].seconds,
+  });
   const [running, setRunning] = useState(false);
 
   useEffect(() => {
     if (!running) return;
     const id = setInterval(() => {
-      setSeconds((s) => {
-        if (s > 1) return s - 1;
-        // advance phase
-        setCycle((c) => (c + 1) % PHASES.length);
-        return PHASES[(cycle + 1) % PHASES.length].seconds;
+      setState((prev) => {
+        if (prev.secondsLeft > 1) {
+          return { phaseIndex: prev.phaseIndex, secondsLeft: prev.secondsLeft - 1 };
+        }
+        // Roll over to next phase.
+        const nextIndex = (prev.phaseIndex + 1) % PHASES.length;
+        return { phaseIndex: nextIndex, secondsLeft: PHASES[nextIndex].seconds };
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [running, cycle]);
+  }, [running]);
 
-  const current = PHASES[cycle];
+  const current = PHASES[phaseIndex];
   const scale =
     current.phase === 'inhale'
-      ? 1 + ((PHASES[0].seconds - seconds) / PHASES[0].seconds) * 0.4
+      ? 1 + ((PHASES[0].seconds - secondsLeft) / PHASES[0].seconds) * 0.4
       : current.phase === 'exhale'
-        ? 1.4 - ((PHASES[2].seconds - seconds) / PHASES[2].seconds) * 0.4
+        ? 1.4 - ((PHASES[2].seconds - secondsLeft) / PHASES[2].seconds) * 0.4
         : current.phase === 'hold1'
           ? 1.4
           : 1.0;
@@ -88,12 +99,12 @@ function BoxBreathingScreen() {
   return (
     <ScreenContainer scroll={false}>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>BODY · 4 MIN · CYCLE {cycle + 1} OF 4</Text>
+        <Text style={styles.eyebrow}>BODY · 4 MIN · CYCLE {phaseIndex + 1} OF 4</Text>
       </View>
 
       <View style={styles.center}>
         <View style={[styles.bubble, { transform: [{ scale }] }]}>
-          <Text style={styles.bubbleNumber}>{seconds}</Text>
+          <Text style={styles.bubbleNumber}>{secondsLeft}</Text>
           <Text style={styles.bubblePhase}>{current.label.toUpperCase()}</Text>
         </View>
         <Text style={styles.instructions}>Inhale · Hold · Exhale · Hold</Text>
@@ -104,7 +115,7 @@ function BoxBreathingScreen() {
         style={({ pressed }) => [styles.cta, pressed && { opacity: 0.8 }]}
       >
         <Text style={styles.ctaText}>
-          {running ? 'Pause' : seconds === PHASES[0].seconds ? 'Begin' : 'Resume'}
+          {running ? 'Pause' : secondsLeft === PHASES[0].seconds ? 'Begin' : 'Resume'}
         </Text>
       </Pressable>
     </ScreenContainer>

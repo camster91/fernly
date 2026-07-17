@@ -105,17 +105,23 @@ export function InsightsScreen() {
           )}
         </View>
         <View style={styles.dayLabels}>
-          {last7.map((d, i) => (
-            <Text
-              key={i}
-              style={[
-                styles.dayLabel,
-                d.score !== null && { color: colors.text, fontWeight: '700' },
-              ]}
-            >
-              {d.day}
-            </Text>
-          ))}
+          {last7.map((d) => {
+            // Render absolute date (e.g. "Jul 11") instead of weekday
+            // letter so labels don't desync from data points across month
+            // boundaries. Use the iso "MM-DD" slice for compactness.
+            const [, mm, dd] = d.iso.split('-');
+            return (
+              <Text
+                key={d.iso}
+                style={[
+                  styles.dayLabel,
+                  d.score !== null && { color: colors.text, fontWeight: '700' },
+                ]}
+              >
+                {`${mm}/${dd}`}
+              </Text>
+            );
+          })}
         </View>
       </Card>
 
