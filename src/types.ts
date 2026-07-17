@@ -47,7 +47,32 @@ export interface ChatMessage {
 export interface ChatSession {
   id: string;
   startedAt: string;
+  // v0.2: version field for forward-compatible schema migrations.
+  // Optional in the input type so old call sites don't have to update
+  // — storage.addChat defaults to v1 if absent.
+  version?: 1;
   messages: ChatMessage[];
+}
+
+// v0.2: separate, encrypted crisis audit entry. Stored in expo-secure-store,
+// not AsyncStorage. Survives `clearAll()` so a user wiping their chat
+// history can't accidentally erase the audit trail. Schema-versioned for
+// forward compatibility.
+export type CrisisSeverity = 'soft' | 'hard';
+
+export interface CrisisAuditEntry {
+  // schema version — bump when changing the field shape
+  version: 1;
+  id: string;
+  at: string; // ISO timestamp
+  severity: CrisisSeverity;
+  // The matched regex (e.g. "kms rn") — small, never the full message.
+  // The full user text is NOT stored here. The chat history in storage.ts
+  // already records the user's exact text — that's available to a future
+  // reviewer with the device. The audit log is for incident response.
+  matchedPhrase?: string;
+  // The locale the modal showed (helpline selected). Empty = default.
+  locale?: string;
 }
 
 export type ExerciseModality = 'CBT' | 'ACT' | 'GROUNDING' | 'BODY' | 'REFLECTION';
