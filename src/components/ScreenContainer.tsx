@@ -1,4 +1,9 @@
 // Screen container — sets background, handles safe areas, gives consistent padding.
+//
+// `edges` lets callers opt out of the top safe-area inset (e.g. when the
+// screen has its own header that already accounts for it). Defaults to
+// `['top']`. Use `[]` to skip safe-area handling entirely (rare; only when
+// the screen renders edge-to-edge with no native chrome).
 import React from 'react';
 import { ScrollView, StyleSheet, View, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
