@@ -18,7 +18,7 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { MoodCheckInScreen } from '../screens/MoodCheckInScreen';
 import { colors } from '../theme';
-import { storage } from '../storage';
+import { storage, onStorageReset } from '../storage';
 
 import type { NavigatorScreenParams } from '@react-navigation/native';
 
@@ -101,18 +101,36 @@ export function RootNav() {
   const [onboarded, setOnboarded] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const p = await storage.getProfile();
-        setOnboarded(!!p?.onboarded);
+        if (!cancelled) setOnboarded(!!p?.onboarded);
       } catch {
         // Storage layer failed. Treat as a fresh install — show onboarding
         // so the user can recover rather than stare at a spinner forever.
-        setOnboarded(false);
+        if (!cancelled) setOnboarded(false);
       } finally {
-        setLoaded(true);
+        if (!cancelled) setLoaded(true);
       }
     })();
+    // Subscribe to storage.reset events so that "Reset Fernly" in the
+    // ProfileScreen actually returns the user to onboarding. Without this,
+    // RootNav's onboarded state stays in memory and the user lands on
+    // an empty tabs UI. The unsubscribe function cleans up on unmount.
+    const unsubscribe = onStorageReset(() => {
+      // Re-read profile — if it's gone (cleared), show onboarding.
+      // Don't await: the listener should be sync-friendly, and a stale
+      // onboarded=false is the safest default.
+      storage
+        .getProfile()
+        .then((p) => setOnboarded(!!p?.onboarded))
+        .catch(() => setOnboarded(false));
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   if (!loaded) return <LoadingScreen />;

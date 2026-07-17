@@ -39,6 +39,31 @@ import type { UserProfile, MoodEntry, ChatSession, ChatMessage, CrisisAuditEntry
 // ---- Constants ----
 const MAX_MESSAGES_PER_SESSION = 200;
 
+// ---- Reset event bus ----
+// RootNav needs to re-read onboarded state after clearAll() because its
+// mount useEffect has [] deps and only runs on first render. The custom
+// event lets RootNav subscribe to resets without coupling to any specific
+// screen. Storage layer emits, RootNav subscribes.
+//
+// This is a tiny pub-sub — one event ('reset') — instead of pulling in
+// an event emitter library. v1 can replace with a proper state library
+// (zustand, etc.) if more cross-screen coordination is needed.
+type ResetListener = () => void;
+const resetListeners = new Set<ResetListener>();
+export function onStorageReset(listener: ResetListener): () => void {
+  resetListeners.add(listener);
+  return () => resetListeners.delete(listener);
+}
+function emitReset() {
+  for (const fn of resetListeners) {
+    try {
+      fn();
+    } catch {
+      /* swallow listener errors so one bad listener doesn't block others */
+    }
+  }
+}
+
 // ---- AsyncStorage keys (unencrypted) ----
 const ASYNC_KEYS = {
   profile: '@fernly/profile',
@@ -342,6 +367,12 @@ export const storage = {
     // and never get read because activeSessionId is gone.
     //
     // NOTE: SECURE_KEYS.crisisAudit is intentionally NOT deleted here.
+    //
+    // Notify subscribers (RootNav) that a reset happened so they can
+    // re-read state. This runs even if the AsyncStorage multiRemove
+    // above partially failed — the partial-failure case is rare but
+    // we want listeners to know we attempted a reset.
+    emitReset();
   },
 
   // --- Admin-only: clear the crisis audit log ---
