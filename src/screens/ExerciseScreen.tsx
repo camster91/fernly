@@ -3,7 +3,7 @@
 // fully-built flow; others show a description + "begin" stub.
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { colors, space, type as t, radius } from '../theme';
@@ -12,7 +12,6 @@ import type { RootStackParamList } from '../nav/RootNav';
 
 export function ExerciseScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'Exercise'>>();
-  const nav = useNavigation();
   const ex = getExercise(route.params.exerciseId);
 
   if (!ex)
@@ -37,10 +36,15 @@ export function ExerciseScreen() {
       <View style={styles.starter}>
         <Text style={styles.bigEmoji}>{ex.emoji}</Text>
         <Pressable
-          onPress={() => nav.goBack()}
-          style={({ pressed }) => [styles.cta, pressed && { opacity: 0.8 }]}
+          // v0.6: stub exercises are no longer "Begin" buttons that
+          // silently bounce back. Disabled with explicit "Coming soon"
+          // copy so the user understands what's happening. The full
+          // flows for thought-record, defusion, values-sort, etc. ship
+          // in build week 2 per the README.
+          disabled
+          style={({ pressed }) => [styles.cta, styles.ctaDisabled, pressed && { opacity: 0.8 }]}
         >
-          <Text style={styles.ctaText}>Begin</Text>
+          <Text style={styles.ctaText}>Coming soon</Text>
         </Pressable>
         <Text style={styles.note}>Flow builds out in build week 2.</Text>
       </View>
@@ -168,5 +172,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: space.s7,
   },
+  ctaDisabled: { backgroundColor: colors.ink4, opacity: 0.6 },
   ctaText: { color: colors.paper, fontWeight: '700', fontSize: 16 },
 });

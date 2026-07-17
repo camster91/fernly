@@ -2,14 +2,12 @@
 // v0: reads from AsyncStorage, draws a real SVG line chart of last 7 days.
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Svg, { Polyline, Circle, Line } from 'react-native-svg';
+import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Card, styles as cardStyles } from '../components/Card';
 import { colors, space, type as t } from '../theme';
 import { storage } from '../storage';
 import type { MoodEntry } from '../types';
-
-const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 export function InsightsScreen() {
   const [moods, setMoods] = useState<MoodEntry[]>([]);
@@ -25,18 +23,16 @@ export function InsightsScreen() {
   }, []);
 
   // Build last 7 days (oldest left, today right)
-  const last7: { day: string; score: number | null; iso: string }[] = [];
+  const last7: { score: number | null; iso: string }[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const iso = d.toISOString().slice(0, 10);
-    const dow = d.getDay(); // 0=Sun
     const found = moods.find((m) => m.date === iso);
-    last7.push({ day: DAYS[(dow + 6) % 7], score: found?.score ?? null, iso });
+    last7.push({ score: found?.score ?? null, iso });
   }
 
   const filled = last7.filter((d) => d.score !== null) as {
-    day: string;
     score: number;
     iso: string;
   }[];
@@ -71,7 +67,7 @@ export function InsightsScreen() {
         </View>
 
         <View style={styles.graph}>
-          {filled.length > 1 ? (
+          {filled.length >= 1 ? (
             <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
               <Line
                 x1={PAD}
@@ -81,19 +77,34 @@ export function InsightsScreen() {
                 stroke={colors.line}
                 strokeWidth={1}
               />
-              <Polyline
-                points={points}
-                fill="none"
-                stroke={colors.accent}
-                strokeWidth={3}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              {filled.map((m, i) => {
-                const x = PAD + (i / Math.max(filled.length - 1, 1)) * (W - 2 * PAD);
-                const y = H - PAD - ((m.score - 1) / 5) * (H - 2 * PAD);
-                return <Circle key={m.iso} cx={x} cy={y} r={5} fill={colors.accent} />;
-              })}
+              {/* v0.6: with only 1 point, render the dot + axis label
+                  instead of a degenerate polyline. Polyline needs ≥2
+                  points to be meaningful; previously the chart hid
+                  itself entirely on the first mood entry. */}
+              {filled.length === 1 ? (
+                (() => {
+                  const m = filled[0];
+                  const cx = W / 2;
+                  const cy = H - PAD - ((m.score - 1) / 5) * (H - 2 * PAD);
+                  return <Circle key={m.iso} cx={cx} cy={cy} r={6} fill={colors.accent} />;
+                })()
+              ) : (
+                <>
+                  <Polyline
+                    points={points}
+                    fill="none"
+                    stroke={colors.accent}
+                    strokeWidth={3}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  {filled.map((m, i) => {
+                    const x = PAD + (i / Math.max(filled.length - 1, 1)) * (W - 2 * PAD);
+                    const y = H - PAD - ((m.score - 1) / 5) * (H - 2 * PAD);
+                    return <Circle key={m.iso} cx={x} cy={y} r={5} fill={colors.accent} />;
+                  })}
+                </>
+              )}
             </Svg>
           ) : (
             <View style={styles.emptyGraph}>
