@@ -102,9 +102,16 @@ export function RootNav() {
 
   useEffect(() => {
     (async () => {
-      const p = await storage.getProfile();
-      setOnboarded(!!p?.onboarded);
-      setLoaded(true);
+      try {
+        const p = await storage.getProfile();
+        setOnboarded(!!p?.onboarded);
+      } catch {
+        // Storage layer failed. Treat as a fresh install — show onboarding
+        // so the user can recover rather than stare at a spinner forever.
+        setOnboarded(false);
+      } finally {
+        setLoaded(true);
+      }
     })();
   }, []);
 

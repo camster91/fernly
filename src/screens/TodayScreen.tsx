@@ -29,21 +29,29 @@ export function TodayScreen() {
 
   useEffect(() => {
     (async () => {
-      setProfile(await storage.getProfile());
-      const today = new Date().toISOString().slice(0, 10);
-      const moods = await storage.getMoods();
-      setTodayMood(moods.find((m) => m.date === today) ?? null);
-      // Naive streak: count consecutive days from today backward
-      let count = 0;
-      let d = new Date();
-      for (;;) {
-        const iso = d.toISOString().slice(0, 10);
-        if (moods.some((m) => m.date === iso)) {
-          count += 1;
-          d.setDate(d.getDate() - 1);
-        } else break;
+      try {
+        const p = await storage.getProfile();
+        setProfile(p);
+        const moods = await storage.getMoods();
+        const today = new Date().toISOString().slice(0, 10);
+        setTodayMood(moods.find((m) => m.date === today) ?? null);
+        // Streak: count consecutive days from today backward using a Set
+        // for O(1) membership checks. O(n) instead of the prior O(n*days).
+        const moodDates = new Set(moods.map((m) => m.date));
+        let count = 0;
+        const d = new Date();
+        for (;;) {
+          const iso = d.toISOString().slice(0, 10);
+          if (moodDates.has(iso)) {
+            count += 1;
+            d.setDate(d.getDate() - 1);
+          } else break;
+        }
+        setStreak(count);
+      } catch {
+        // Storage layer failed (native module not linked, etc.).
+        // Render the screen with empty state rather than crashing.
       }
-      setStreak(count);
     })();
   }, []);
 
