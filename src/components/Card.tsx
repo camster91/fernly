@@ -15,11 +15,11 @@ interface Props {
 
 const variantBg: Record<Variant, string> = {
   default: colors.paper2,
-  soft:    colors.lavender50,
-  peach:   colors.peach50,
-  mint:    colors.mint50,
-  yellow:  colors.yellow50,
-  rose:    colors.rose50,
+  soft: colors.lavender50,
+  peach: colors.peach50,
+  mint: colors.mint50,
+  yellow: colors.yellow50,
+  rose: colors.rose50,
 };
 
 export function Card({ variant = 'default', onPress, style, children }: Props) {

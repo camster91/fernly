@@ -21,7 +21,7 @@ interface Props {
 export function MoodPicker({ value, onChange }: Props) {
   return (
     <View style={styles.row}>
-      {MOODS.map(m => {
+      {MOODS.map((m) => {
         const active = value === m.score;
         return (
           <Pressable
@@ -68,5 +68,5 @@ const styles = StyleSheet.create({
 });
 
 export function moodLabel(score: MoodScore | undefined): string {
-  return MOODS.find(m => m.score === score)?.label ?? '—';
+  return MOODS.find((m) => m.score === score)?.label ?? '—';
 }

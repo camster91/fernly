@@ -14,7 +14,7 @@ import type { RootStackParamList } from '../nav/RootNav';
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 function greetingForHour(h: number): string {
-  if (h < 5)  return 'Still up?';
+  if (h < 5) return 'Still up?';
   if (h < 12) return 'Good morning';
   if (h < 17) return 'Hey afternoon';
   if (h < 21) return 'Good evening';
@@ -32,13 +32,13 @@ export function TodayScreen() {
       setProfile(await storage.getProfile());
       const today = new Date().toISOString().slice(0, 10);
       const moods = await storage.getMoods();
-      setTodayMood(moods.find(m => m.date === today) ?? null);
+      setTodayMood(moods.find((m) => m.date === today) ?? null);
       // Naive streak: count consecutive days from today backward
       let count = 0;
       let d = new Date();
       for (;;) {
         const iso = d.toISOString().slice(0, 10);
-        if (moods.some(m => m.date === iso)) {
+        if (moods.some((m) => m.date === iso)) {
           count += 1;
           d.setDate(d.getDate() - 1);
         } else break;
@@ -54,7 +54,9 @@ export function TodayScreen() {
   return (
     <ScreenContainer>
       <View style={styles.greeting}>
-        <Text style={styles.eyebrow}>{greetingForHour(hour).toUpperCase()} · {streak}-DAY STREAK</Text>
+        <Text style={styles.eyebrow}>
+          {greetingForHour(hour).toUpperCase()} · {streak}-DAY STREAK
+        </Text>
         <Text style={styles.hi}>Hey {firstName} 👋</Text>
         <Text style={styles.prompt}>
           {todayMood
@@ -69,11 +71,13 @@ export function TodayScreen() {
           const today = i === new Date().getDay() - 1;
           return (
             <View key={i} style={styles.streakDay}>
-              <View style={[
-                styles.streakDot,
-                done && styles.streakDotDone,
-                today && styles.streakDotToday,
-              ]} />
+              <View
+                style={[
+                  styles.streakDot,
+                  done && styles.streakDotDone,
+                  today && styles.streakDotToday,
+                ]}
+              />
               <Text style={styles.streakLabel}>{d}</Text>
             </View>
           );
@@ -86,7 +90,10 @@ export function TodayScreen() {
         <Text style={cardStyles.sub}>Tap an emoji that fits. That's it.</Text>
       </Card>
 
-      <Card variant="peach" onPress={() => nav.navigate('Exercise', { exerciseId: 'box-breathing' })}>
+      <Card
+        variant="peach"
+        onPress={() => nav.navigate('Exercise', { exerciseId: 'box-breathing' })}
+      >
         <Text style={cardStyles.eyebrow}>TODAY'S PRACTICE</Text>
         <Text style={cardStyles.title}>Box breathing</Text>
         <Text style={cardStyles.sub}>4 minutes. Calms your nervous system fast.</Text>
@@ -102,10 +109,10 @@ export function TodayScreen() {
 }
 
 const styles = StyleSheet.create({
-  greeting:    { paddingHorizontal: space.s6, paddingTop: space.s6, paddingBottom: space.s4 },
-  eyebrow:     { ...t.eyebrow, color: colors.textMuted, marginBottom: space.s2 },
-  hi:          { ...t.displayLg, color: colors.text, marginBottom: space.s2 },
-  prompt:      { ...t.body, color: colors.textSoft, lineHeight: 22 },
+  greeting: { paddingHorizontal: space.s6, paddingTop: space.s6, paddingBottom: space.s4 },
+  eyebrow: { ...t.eyebrow, color: colors.textMuted, marginBottom: space.s2 },
+  hi: { ...t.displayLg, color: colors.text, marginBottom: space.s2 },
+  prompt: { ...t.body, color: colors.textSoft, lineHeight: 22 },
 
   streakStrip: {
     flexDirection: 'row',
@@ -119,8 +126,14 @@ const styles = StyleSheet.create({
     marginHorizontal: space.s6,
     marginBottom: space.s5,
   },
-  streakDay:   { alignItems: 'center' },
-  streakDot:   { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.line, marginBottom: 6 },
+  streakDay: { alignItems: 'center' },
+  streakDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.line,
+    marginBottom: 6,
+  },
   streakDotDone: { backgroundColor: colors.mint300 },
   streakDotToday: { backgroundColor: colors.accent, boxShadow: '0 0 0 4px ' + colors.lavender100 },
   streakLabel: { fontFamily: 'Menlo', fontSize: 9, color: colors.textMuted, letterSpacing: 0.5 },

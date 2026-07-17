@@ -8,11 +8,16 @@ import { storage } from '../storage';
 import type { UserProfile } from '../types';
 
 const MASCOT_EMOJI: Record<string, string> = {
-  moon: '🌙', fox: '🦊', turtle: '🐢', bee: '🐝',
+  moon: '🌙',
+  fox: '🦊',
+  turtle: '🐢',
+  bee: '🐝',
 };
 
 const TONE_LABEL: Record<string, string> = {
-  soft: '🕊 Soft', direct: '⚡ Direct', playful: '✨ Playful',
+  soft: '🕊 Soft',
+  direct: '⚡ Direct',
+  playful: '✨ Playful',
 };
 
 export function ProfileScreen() {
@@ -25,9 +30,10 @@ export function ProfileScreen() {
       setProfile(p);
       const moods = await storage.getMoods();
       const chats = await storage.getChats();
-      const days = moods.length > 0
-        ? Math.ceil((Date.now() - new Date(p?.createdAt || Date.now()).getTime()) / 86_400_000)
-        : 0;
+      const days =
+        moods.length > 0
+          ? Math.ceil((Date.now() - new Date(p?.createdAt || Date.now()).getTime()) / 86_400_000)
+          : 0;
       setStats({ moods: moods.length, chats: chats.length, days });
     })();
   }, []);
@@ -36,9 +42,14 @@ export function ProfileScreen() {
     return (
       <Pressable
         onPress={onPress}
-        style={({ pressed }) => [styles.row, pressed && onPress && { backgroundColor: colors.lavender50 }]}
+        style={({ pressed }) => [
+          styles.row,
+          pressed && onPress && { backgroundColor: colors.lavender50 },
+        ]}
       >
-        <View style={styles.rowIcon}><Text style={{ fontSize: 18 }}>{icon}</Text></View>
+        <View style={styles.rowIcon}>
+          <Text style={{ fontSize: 18 }}>{icon}</Text>
+        </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.rowTitle}>{title}</Text>
           {sub && <Text style={styles.rowSub}>{sub}</Text>}
@@ -58,18 +69,18 @@ export function ProfileScreen() {
   }
 
   async function reset() {
-    Alert.alert(
-      'Reset Fernly?',
-      'This clears your profile, moods, and chats. Cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Reset', style: 'destructive', onPress: async () => {
+    Alert.alert('Reset Fernly?', 'This clears your profile, moods, and chats. Cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Reset',
+        style: 'destructive',
+        onPress: async () => {
           await storage.clearAll();
           setProfile(null);
           setStats({ moods: 0, chats: 0, days: 0 });
-        }},
-      ],
-    );
+        },
+      },
+    ]);
   }
 
   return (
@@ -80,23 +91,28 @@ export function ProfileScreen() {
         </View>
         <Text style={styles.name}>{profile?.name || '—'}</Text>
         <Text style={styles.subline}>
-          {profile ? TONE_LABEL[profile.tone] : ''}{profile?.goals?.length ? ` · ${profile.goals.length} GOALS` : ''}
+          {profile ? TONE_LABEL[profile.tone] : ''}
+          {profile?.goals?.length ? ` · ${profile.goals.length} GOALS` : ''}
         </Text>
       </View>
 
       <View style={styles.statsRow}>
-        <Stat bg={colors.lavender50} value={String(stats.days)}      label="DAYS" />
-        <Stat bg={colors.peach50}    value={String(stats.moods)}     label="MOODS" />
-        <Stat bg={colors.mint50}     value={String(profile?.goals?.length ?? 0)} label="GOALS" />
+        <Stat bg={colors.lavender50} value={String(stats.days)} label="DAYS" />
+        <Stat bg={colors.peach50} value={String(stats.moods)} label="MOODS" />
+        <Stat bg={colors.mint50} value={String(profile?.goals?.length ?? 0)} label="GOALS" />
       </View>
 
       <View style={styles.section}>
-        {row('🌙', 'Your mascot',          profile ? MASCOT_EMOJI[profile.mascot] : undefined)}
-        {row('💬', 'Conversation tone',     profile?.tone ? TONE_LABEL[profile.tone] : undefined)}
-        {row('🎯', 'Your goals',           profile?.goals?.length ? `${profile.goals.length} chosen` : 'Not set')}
-        {row('📥', 'Export your data',     'JSON, one tap', exportData)}
-        {row('⚖️', 'Legal & safety',       'Disclaimer · Privacy · EULA')}
-        {row('🗑', 'Reset Fernly',         'Clear all data', reset)}
+        {row('🌙', 'Your mascot', profile ? MASCOT_EMOJI[profile.mascot] : undefined)}
+        {row('💬', 'Conversation tone', profile?.tone ? TONE_LABEL[profile.tone] : undefined)}
+        {row(
+          '🎯',
+          'Your goals',
+          profile?.goals?.length ? `${profile.goals.length} chosen` : 'Not set',
+        )}
+        {row('📥', 'Export your data', 'JSON, one tap', exportData)}
+        {row('⚖️', 'Legal & safety', 'Disclaimer · Privacy · EULA')}
+        {row('🗑', 'Reset Fernly', 'Clear all data', reset)}
       </View>
     </ScreenContainer>
   );
@@ -112,20 +128,56 @@ function Stat({ bg, value, label }: { bg: string; value: string; label: string }
 }
 
 const styles = StyleSheet.create({
-  header:     { alignItems: 'center', paddingTop: space.s7, paddingHorizontal: space.s6, paddingBottom: space.s5 },
-  avatar:     { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.lavender50, alignItems: 'center', justifyContent: 'center', marginBottom: space.s3, borderWidth: 3, borderColor: colors.paper2 },
-  name:       { ...t.title, fontSize: 22, color: colors.text, marginBottom: 4 },
-  subline:    { ...t.eyebrow, color: colors.textMuted },
+  header: {
+    alignItems: 'center',
+    paddingTop: space.s7,
+    paddingHorizontal: space.s6,
+    paddingBottom: space.s5,
+  },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.lavender50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: space.s3,
+    borderWidth: 3,
+    borderColor: colors.paper2,
+  },
+  name: { ...t.title, fontSize: 22, color: colors.text, marginBottom: 4 },
+  subline: { ...t.eyebrow, color: colors.textMuted },
 
-  statsRow:   { flexDirection: 'row', gap: 8, paddingHorizontal: space.s6, marginBottom: space.s6 },
-  stat:       { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: radius.md },
-  statValue:  { fontSize: 22, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
-  statLabel:  { ...t.eyebrow, fontSize: 10, color: colors.textMuted, marginTop: 2 },
+  statsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: space.s6, marginBottom: space.s6 },
+  stat: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: radius.md },
+  statValue: { fontSize: 22, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
+  statLabel: { ...t.eyebrow, fontSize: 10, color: colors.textMuted, marginTop: 2 },
 
-  section:    { backgroundColor: colors.paper2, marginHorizontal: space.s6, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },
-  row:        { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.line },
-  rowIcon:    { width: 36, height: 36, borderRadius: radius.sm, backgroundColor: colors.lavender50, alignItems: 'center', justifyContent: 'center', marginRight: 14 },
-  rowTitle:   { ...t.body, fontWeight: '600', color: colors.text, fontSize: 15 },
-  rowSub:     { ...t.small, color: colors.textMuted, marginTop: 2 },
-  chevron:    { color: colors.ink4, fontSize: 18 },
+  section: {
+    backgroundColor: colors.paper2,
+    marginHorizontal: space.s6,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    overflow: 'hidden',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  rowIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    backgroundColor: colors.lavender50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  rowTitle: { ...t.body, fontWeight: '600', color: colors.text, fontSize: 15 },
+  rowSub: { ...t.small, color: colors.textMuted, marginTop: 2 },
+  chevron: { color: colors.ink4, fontSize: 18 },
 });

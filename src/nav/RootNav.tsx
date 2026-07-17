@@ -17,7 +17,7 @@ import { InsightsScreen } from '../screens/InsightsScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { MoodCheckInScreen } from '../screens/MoodCheckInScreen';
-import { colors, space, type as t } from '../theme';
+import { colors } from '../theme';
 import { storage } from '../storage';
 
 import type { NavigatorScreenParams } from '@react-navigation/native';
@@ -114,11 +114,20 @@ export function RootNav() {
     <SafeAreaProvider>
       <NavigationContainer>
         {!onboarded ? (
-          <OnboardingScreen onDone={async () => { await storage.setOnboarded(true); setOnboarded(true); }} />
+          <OnboardingScreen
+            onDone={async () => {
+              await storage.setOnboarded(true);
+              setOnboarded(true);
+            }}
+          />
         ) : (
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Tabs" component={Tabs} />
-            <Stack.Screen name="MoodCheckIn" component={MoodCheckInScreen} options={{ presentation: 'modal' }} />
+            <Stack.Screen
+              name="MoodCheckIn"
+              component={MoodCheckInScreen}
+              options={{ presentation: 'modal' }}
+            />
             <Stack.Screen name="Exercise" component={ExerciseScreen} />
           </Stack.Navigator>
         )}
