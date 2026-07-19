@@ -373,7 +373,7 @@ export const storage = {
   // For full wipe of all sessions across history, the ProfileScreen
   // already calls clearAll() on user request.
   async clearAll() {
-    await AsyncStorage.multiRemove(Object.values(ASYNC_KEYS));
+    await AsyncStorage.removeMany(Object.values(ASYNC_KEYS));
     // Best-effort wipe of legacy blob.
     await secureDelete(SECURE_KEYS.chats);
     // v0.6: enumerate and delete every per-session SecureStore key.
@@ -394,7 +394,7 @@ export const storage = {
     // NOTE: SECURE_KEYS.crisisAudit is intentionally NOT deleted here.
     //
     // Notify subscribers (RootNav) that a reset happened so they can
-    // re-read state. This runs even if the AsyncStorage multiRemove
+    // re-read state. This runs even if the AsyncStorage removeMany
     // above partially failed — the partial-failure case is rare but
     // we want listeners to know we attempted a reset.
     emitReset();
