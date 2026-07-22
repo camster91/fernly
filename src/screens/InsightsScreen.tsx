@@ -22,7 +22,11 @@ export function InsightsScreen() {
     })();
   }, []);
 
-  // Build last 7 days (oldest left, today right)
+  // Build last 7 days (oldest left, today right). The 7-day window
+  // crosses month boundaries naturally — last7[0] might be '2026-06-28'
+  // while last7[6] is '2026-07-04'. Day labels use absolute MM/DD
+  // (see JSX below) so they don't desync from data points when the
+  // window spans two months.
   const last7: { score: number | null; iso: string }[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();

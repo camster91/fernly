@@ -62,12 +62,14 @@ const PHASES: { phase: Phase; label: string; seconds: number }[] = [
 ];
 
 function BoxBreathingScreen() {
-  // v0.5: combined phase+seconds into a single state object so the
-  // setInterval can use only functional updaters. Previously the
-  // effect deps included `cycle`, which meant the interval was torn
-  // down and rebuilt every 4 seconds when the phase advanced. Now
-  // the effect deps are just `[running]`, and the interval stays
-  // alive for the entire session.
+  // v0.5 + v0.7: combined phase+seconds into a single state object so the
+  // setInterval can use only functional updaters. Effect deps are
+  // [running] only — the interval stays alive for the entire session,
+  // not torn down/rebuilt every 4s on phase advance.
+  //
+  // Phase transitions: 4s inhale → 4s hold1 → 4s exhale → 4s hold2 →
+  // (rolls back to inhale). One full cycle = 16s. The phase cycle
+  // counter in the eyebrow displays 1-4.
   type State = { phaseIndex: number; secondsLeft: number };
   const [{ phaseIndex, secondsLeft }, setState] = useState<State>({
     phaseIndex: 0,
