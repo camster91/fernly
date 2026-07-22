@@ -241,13 +241,28 @@ export function ChatScreen() {
           <Pressable
             style={styles.quickPill}
             onPress={() => setInput("I'm anxious about tomorrow.")}
+            accessibilityRole="button"
+            accessibilityLabel="I'm anxious — fill the input"
+            accessibilityHint="Starts the chat with 'I'm anxious about tomorrow.'"
           >
             <Text style={styles.quickText}>I'm anxious</Text>
           </Pressable>
-          <Pressable style={styles.quickPill} onPress={() => setInput("I can't sleep.")}>
+          <Pressable
+            style={styles.quickPill}
+            onPress={() => setInput("I can't sleep.")}
+            accessibilityRole="button"
+            accessibilityLabel="I can't sleep — fill the input"
+            accessibilityHint="Starts the chat with 'I can't sleep.'"
+          >
             <Text style={styles.quickText}>I can't sleep</Text>
           </Pressable>
-          <Pressable style={styles.quickPill} onPress={() => setInput('Today was hard.')}>
+          <Pressable
+            style={styles.quickPill}
+            onPress={() => setInput('Today was hard.')}
+            accessibilityRole="button"
+            accessibilityLabel="Today was hard — fill the input"
+            accessibilityHint="Starts the chat with 'Today was hard.'"
+          >
             <Text style={styles.quickText}>Today was hard</Text>
           </Pressable>
         </View>

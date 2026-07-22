@@ -35,7 +35,12 @@ export function PracticeScreen() {
       {exercises.map((ex) => {
         const tag = MODALITY_COLOR[ex.modality] ?? { bg: colors.line, fg: colors.text };
         return (
-          <Card key={ex.id} onPress={() => nav.navigate('Exercise', { exerciseId: ex.id })}>
+          <Card
+            key={ex.id}
+            onPress={() => nav.navigate('Exercise', { exerciseId: ex.id })}
+            accessibilityLabel={`${ex.title}, ${ex.modality} exercise, ${ex.durationMin} minutes`}
+            accessibilityHint="Opens the exercise flow"
+          >
             <View style={styles.row}>
               <View style={[styles.icon, { backgroundColor: tag.bg }]}>
                 <Text style={styles.iconEmoji}>{ex.emoji}</Text>
