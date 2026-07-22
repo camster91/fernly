@@ -129,7 +129,7 @@ export function ProfileScreen() {
     // running.
     Alert.alert(
       'Fernly — legal & safety',
-      'Fernly is not therapy. If you are in crisis, contact 988 (US) or 116 123 (UK).\n\nFull Disclaimer, Privacy Policy, and EULA land in build week 6. Open-source decision is on the v1 roadmap.',
+      'Fernly is not therapy. If you are in crisis, contact 988 (US) or 116 123 (UK).\n\nFull Disclaimer, Privacy Policy, and EULA ship in a future update. Open-source decision is on the roadmap.',
     );
   }
 
