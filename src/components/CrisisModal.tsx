@@ -100,6 +100,15 @@ export function CrisisModal({ visible, locale, matchedPhrase: _matchedPhrase, on
     AccessibilityInfo.announceForAccessibility(
       'Safety resources. Choose a helpline below, or hold the bottom button for one and a half seconds to return to chat.',
     );
+
+    // v0.8: unmount cleanup. Without this, if the component unmounts
+    // mid-press (route pop, parent re-render swap), holdTimerRef
+    // keeps running and fires setState on an unmounted component for
+    // up to 1.5s. The visible===false branch above only catches the
+    // normal dismiss flow; this catches the unmount path too.
+    return () => {
+      if (holdTimerRef.current) clearInterval(holdTimerRef.current);
+    };
   }, [visible, resources]);
 
   function startHold() {
