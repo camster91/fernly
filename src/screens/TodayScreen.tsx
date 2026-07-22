@@ -122,6 +122,12 @@ export function TodayScreen() {
           // letters (T F S S M T W) desync from the actual data across
           // week boundaries because the labels are computed independently
           // of which dates they represent.
+          //
+          // Color-blind fix (v0.8): logged days carry a ✓ glyph in
+          // addition to color. Sighted users get a redundant signal;
+          // color-blind users (8% of males) get the only signal they
+          // can use. Unlogged dots are outlined (border-only, no fill)
+          // so the SHAPE differs too, not just the color.
           const date = new Date();
           date.setDate(date.getDate() - (6 - i));
           const dow = date.getDay(); // 0=Sun..6=Sat
@@ -151,7 +157,13 @@ export function TodayScreen() {
                   done && styles.streakDotDone,
                   today && styles.streakDotToday,
                 ]}
-              />
+              >
+                {/* ✓ glyph for done days — redundant for sighted users,
+                    primary for color-blind users. Hidden from the a11y
+                    tree because the parent View's accessibilityLabel
+                    already conveys the state. */}
+                {done && <Text style={styles.streakCheck}>✓</Text>}
+              </View>
               <Text style={styles.streakLabel}>{dayLabel}</Text>
             </View>
           );
@@ -219,13 +231,35 @@ const styles = StyleSheet.create({
   },
   streakDay: { alignItems: 'center' },
   streakDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.line,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.paper2,
+    borderWidth: 1.5,
+    borderColor: colors.line,
     marginBottom: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  streakDotDone: { backgroundColor: colors.mint300 },
-  streakDotToday: { backgroundColor: colors.accent, boxShadow: '0 0 0 4px ' + colors.lavender100 },
+  // Done dots are filled mint + carry a ✓ glyph (added in JSX).
+  // Border-only on undonedots makes the SHAPE differ too — color-blind
+  // users get shape as the primary signal, color as secondary.
+  streakDotDone: {
+    backgroundColor: colors.mint300,
+    borderColor: colors.mint300,
+  },
+  streakDotToday: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+    boxShadow: '0 0 0 4px ' + colors.lavender100,
+  },
+  streakCheck: {
+    color: colors.paper,
+    fontSize: 9,
+    fontWeight: '900',
+    lineHeight: 11,
+    // Pull the glyph up 1px to visually center in the dot
+    marginTop: -1,
+  },
   streakLabel: { fontFamily: 'Menlo', fontSize: 9, color: colors.textMuted, letterSpacing: 0.5 },
 });
