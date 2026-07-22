@@ -2,7 +2,8 @@
 // Different exercises get different UIs. v0: box breathing is the only
 // fully-built flow; others show a description + "begin" stub.
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
@@ -88,9 +89,27 @@ function BoxBreathingScreen() {
         if (prev.secondsLeft > 1) {
           return { phaseIndex: prev.phaseIndex, secondsLeft: prev.secondsLeft - 1 };
         }
-        // Roll over to next phase.
+        // Roll over to next phase. v0.8: fire a haptic so users with eyes
+        // closed (the actual use case for a breathing exercise) get a
+        // non-visual cue when the phase changes. Different intensity per
+        // phase — inhale/exhale get a soft tap (light work), holds get a
+        // notification (the "boundary" moment). Web and iOS simulator are
+        // no-ops; physical iOS/Android devices get the real feedback.
         const nextIndex = (prev.phaseIndex + 1) % PHASES.length;
-        return { phaseIndex: nextIndex, secondsLeft: PHASES[nextIndex].seconds };
+        const nextPhase = PHASES[nextIndex];
+        try {
+          if (Platform.OS !== 'web') {
+            const isHold = nextPhase.phase === 'hold1' || nextPhase.phase === 'hold2';
+            Haptics.notificationAsync(
+              isHold
+                ? Haptics.NotificationFeedbackType.Success
+                : Haptics.NotificationFeedbackType.Warning,
+            ).catch(() => undefined);
+          }
+        } catch {
+          // expo-haptics not available (e.g. web bundling); silently no-op.
+        }
+        return { phaseIndex: nextIndex, secondsLeft: nextPhase.seconds };
       });
     }, 1000);
     return () => clearInterval(id);
