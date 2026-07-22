@@ -6,6 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Card, styles as cardStyles } from '../components/Card';
+import { moodLabel } from '../components/MoodPicker';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import type { UserProfile, MoodEntry } from '../types';
@@ -105,7 +106,7 @@ export function TodayScreen() {
         <Text style={styles.hi}>Hey {firstName} 👋</Text>
         <Text style={styles.prompt}>
           {todayMood
-            ? `Today's already logged as ${todayMood.score}/6. Anything else land?`
+            ? `Today's already logged as ${moodLabel(todayMood.score)} (${todayMood.score}/6). Anything else land?`
             : streakGrace
               ? `Log today to keep your ${streak}-day streak going.`
               : 'How are you waking up today?'}
@@ -114,20 +115,36 @@ export function TodayScreen() {
 
       <View style={styles.streakStrip}>
         {WEEKDAYS.map((d, i) => {
-          // Today sits at strip index 6 (rightmost). The dot label M..S
-          // aligns with the day-of-week of the day at strip[i]. The first
-          // dot (index 0) is 6 days ago — its label depends on what
-          // weekday that was. We compute the label from the date itself
-          // instead of trusting a static M..S array (which is wrong
-          // whenever today isn't Sunday).
+          // Today sits at strip index 6 (rightmost). Each dot represents
+          // a specific calendar day (6 days ago through today), and we
+          // render the absolute MM/DD date below it rather than a weekday
+          // letter — same approach as InsightsScreen. v0.7 fix: weekday
+          // letters (T F S S M T W) desync from the actual data across
+          // week boundaries because the labels are computed independently
+          // of which dates they represent.
           const date = new Date();
           date.setDate(date.getDate() - (6 - i));
           const dow = date.getDay(); // 0=Sun..6=Sat
-          const label = WEEKDAYS[(dow + 6) % 7]; // 0=Sun→6(Sat), 1=Mon→0(M)
+          const weekdayLabel = WEEKDAYS[(dow + 6) % 7];
+          const mm = String(date.getMonth() + 1).padStart(2, '0');
+          const dd = String(date.getDate()).padStart(2, '0');
+          const dayLabel = `${mm}/${dd}`;
           const done = weekLog[i];
           const today = i === 6;
+          // Compose a screen-reader label: weekday + date + state. VoiceOver
+          // gets the same context sighted users get from the layout
+          // (dot color + position) without the desync.
+          const a11yLabel = `${today ? 'Today, ' : ''}${weekdayLabel} ${dayLabel}${
+            done ? ', mood logged' : ', not logged'
+          }`;
           return (
-            <View key={i} style={styles.streakDay}>
+            <View
+              key={i}
+              style={styles.streakDay}
+              accessible={true}
+              accessibilityRole="text"
+              accessibilityLabel={a11yLabel}
+            >
               <View
                 style={[
                   styles.streakDot,
@@ -135,7 +152,7 @@ export function TodayScreen() {
                   today && styles.streakDotToday,
                 ]}
               />
-              <Text style={styles.streakLabel}>{label}</Text>
+              <Text style={styles.streakLabel}>{dayLabel}</Text>
             </View>
           );
         })}
