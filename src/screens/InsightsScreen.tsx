@@ -42,17 +42,45 @@ export function InsightsScreen() {
   }[];
   const avg = filled.length ? filled.reduce((s, m) => s + m.score, 0) / filled.length : null;
 
-  // Render SVG line chart
+  // Render SVG line chart. The x-axis is calibrated to ALL 7 days
+  // (oldest left, today right) regardless of how many days have data.
+  // Days without data are rendered as gaps in the polyline so the
+  // chart line connects only consecutive filled days — v0.7 fix for
+  // the "line spans full width but data only fills 3 of 7" bug.
+  // (Previously the line was scaled to filled.length-1 which stretched
+  // the line across the full chart width even when the data only
+  // covered days 4-6 of the 7-day window.)
   const W = 320,
     H = 100,
     PAD = 12;
-  const points = filled
-    .map((m, i) => {
-      const x = PAD + (i / Math.max(filled.length - 1, 1)) * (W - 2 * PAD);
-      const y = H - PAD - ((m.score - 1) / 5) * (H - 2 * PAD);
-      return `${x},${y}`;
-    })
-    .join(' ');
+  const CHART_W = W - 2 * PAD;
+
+  // Build (x, y) points for every filled day, using its position in
+  // the last7 array (0..6) so the x-axis aligns with the day labels.
+  const pointsByIndex = filled.map((m) => {
+    const idx = last7.findIndex((d) => d.iso === m.iso);
+    const x = PAD + (idx / 6) * CHART_W;
+    const y = H - PAD - ((m.score - 1) / 5) * (H - 2 * PAD);
+    return { x, y, iso: m.iso };
+  });
+
+  // Group consecutive filled days into polyline segments so a missing
+  // day in the middle of the week shows as a real gap rather than a
+  // line connecting across the void.
+  const segments: string[] = [];
+  let current: string[] = [];
+  let lastIdx = -2;
+  for (const p of pointsByIndex) {
+    const idx = last7.findIndex((d) => d.iso === p.iso);
+    if (idx === lastIdx + 1) {
+      current.push(`${p.x},${p.y}`);
+    } else {
+      if (current.length > 0) segments.push(current.join(' '));
+      current = [`${p.x},${p.y}`];
+    }
+    lastIdx = idx;
+  }
+  if (current.length > 0) segments.push(current.join(' '));
 
   return (
     <ScreenContainer>
@@ -88,25 +116,29 @@ export function InsightsScreen() {
               {filled.length === 1 ? (
                 (() => {
                   const m = filled[0];
-                  const cx = W / 2;
+                  // Center the single dot on its actual day position so
+                  // the day label below the dot still aligns. v0.7 fix.
+                  const idx = last7.findIndex((d) => d.iso === m.iso);
+                  const cx = PAD + (idx / 6) * CHART_W;
                   const cy = H - PAD - ((m.score - 1) / 5) * (H - 2 * PAD);
                   return <Circle key={m.iso} cx={cx} cy={cy} r={6} fill={colors.accent} />;
                 })()
               ) : (
                 <>
-                  <Polyline
-                    points={points}
-                    fill="none"
-                    stroke={colors.accent}
-                    strokeWidth={3}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  {filled.map((m, i) => {
-                    const x = PAD + (i / Math.max(filled.length - 1, 1)) * (W - 2 * PAD);
-                    const y = H - PAD - ((m.score - 1) / 5) * (H - 2 * PAD);
-                    return <Circle key={m.iso} cx={x} cy={y} r={5} fill={colors.accent} />;
-                  })}
+                  {segments.map((seg, i) => (
+                    <Polyline
+                      key={`seg-${i}`}
+                      points={seg}
+                      fill="none"
+                      stroke={colors.accent}
+                      strokeWidth={3}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  ))}
+                  {pointsByIndex.map((p) => (
+                    <Circle key={p.iso} cx={p.x} cy={p.y} r={5} fill={colors.accent} />
+                  ))}
                 </>
               )}
             </Svg>
