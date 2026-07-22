@@ -12,7 +12,7 @@
 //   - Memoized message bubble to avoid re-render on every keystroke
 // v0.7: removed abortRef + useRef (no fetch yet). When the LLM ships,
 // AbortController + useRef re-enter.
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -30,7 +30,7 @@ import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import { detectCrisis } from '../safety/crisis';
 import { MASCOT_EMOJI, MASCOT_EMOJI_FALLBACK } from '../data/mascots';
-import type { ChatMessage, CrisisAuditEntry, UserProfile, Tone } from '../types';
+import type { ChatMessage, ChatSession, CrisisAuditEntry, UserProfile, Tone } from '../types';
 
 const MAX_INPUT_LENGTH = 4000;
 
@@ -83,6 +83,18 @@ export function ChatScreen() {
   const [crisisVisible, setCrisisVisible] = useState(false);
   const [crisisMatched, setCrisisMatched] = useState<string | undefined>();
   const [isSending, setIsSending] = useState(false);
+  // v0.8: useRef for the in-flight guard. useState lags one render
+  // commit, so a rapid double-tap (keyboard Enter + send-button
+  // press before React re-renders) sees isSending === false on
+  // both invocations and runs send() twice — duplicate messages,
+  // duplicate session creations. See plans/05-full-codebase-review-
+  // 2026-07-22.md P0-4.
+  const isSendingRef = useRef(false);
+  // Single-flight guard for createChatSession — the !sessionId branch
+  // is async and can race against itself on rapid taps. The first
+  // invocation populates this ref; concurrent invocations await the
+  // same promise.
+  const sessionCreateRef = useRef<Promise<ChatSession> | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -103,12 +115,17 @@ export function ChatScreen() {
         if (cancelled) return;
         if (id) {
           const session = await storage.getChatSession(id);
+          // v0.8: check cancelled AFTER every async hop. The previous
+          // code only checked once after the await, so a navigaway-
+          // mid-resolve still triggered the stale-id write at line 112.
+          // See plans/05-full-codebase-review-2026-07-22.md P0-5.
           if (cancelled) return;
           if (session) {
             setActiveSessionId(session.id);
             setMessages(session.messages);
-          } else {
-            // Active id is stale — clear it.
+          } else if (!cancelled) {
+            // Active id is stale — clear it. Guarded by cancelled
+            // so an unmount doesn't clobber persisted state.
             await storage.setActiveSessionId(null);
           }
         }
@@ -125,23 +142,32 @@ export function ChatScreen() {
   }, []);
 
   async function send() {
-    if (isSending) return;
+    // v0.8: useRef-backed guard (lines 86-88) instead of useState isSending.
+    // useState lags one render commit — rapid double-tap (keyboard Enter
+    // + send-button press) sees isSending === false on both invocations.
+    // The ref flips synchronously inside the same tick.
+    if (isSendingRef.current) return;
     const text = input.trim();
     if (!text) return;
-
-    setIsSending(true);
+    isSendingRef.current = true;
+    setIsSending(true); // also drives the UI disabled state
     setInput('');
 
     try {
       // CRISIS CHECK FIRST. If hard, the modal wins, the LLM never sees this.
       const verdict = detectCrisis(text);
 
-      // Ensure there's an active session — create one if not. This is the
-      // single point where sessions are created, so the active-session-id
-      // invariant always holds after a successful send.
+      // Ensure there's an active session — create one if not. Single-flight
+      // guard so concurrent sends share the same createChatSession
+      // promise instead of racing each other (which used to create two
+      // sessions and double-append messages).
       let sessionId = activeSessionId;
       if (!sessionId) {
-        const session = await storage.createChatSession([]);
+        if (!sessionCreateRef.current) {
+          sessionCreateRef.current = storage.createChatSession([]);
+        }
+        const session = await sessionCreateRef.current;
+        sessionCreateRef.current = null;
         sessionId = session.id;
         setActiveSessionId(session.id);
       }
@@ -209,6 +235,7 @@ export function ChatScreen() {
       const afterReply = await storage.appendMessageToSession(sessionId, replyMsg);
       if (afterReply) setMessages(afterReply.messages);
     } finally {
+      isSendingRef.current = false;
       setIsSending(false);
     }
   }
