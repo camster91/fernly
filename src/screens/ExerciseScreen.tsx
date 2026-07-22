@@ -57,7 +57,20 @@ export function ExerciseScreen() {
   );
 }
 
-// Box breathing — animated 4-4-4-4 cycle. Real implementation, ships tonight.
+// Box breathing — animated 4-4-4-4 cycle.
+//
+// v0.8: previously the session ran forever with a misleading
+// 'BODY · 4 MIN · CYCLE N OF 4' eyebrow. The label said "4 minutes"
+// but no timer counted down. v0.8 fixes this with a fixed
+// `TOTAL_CYCLES` and a completion state that stops the timer.
+//
+// Cycle math: 4 phases × 4 seconds = 16s per cycle. 15 cycles =
+// 240 seconds = exactly 4 minutes. The TodayScreen card promises
+// "4 minutes. Calms your nervous system fast." — this delivers it.
+//
+// Phase transitions: 4s inhale → 4s hold1 → 4s exhale → 4s hold2 →
+// (rolls back to inhale). The cycle counter in the eyebrow
+// tracks how many complete cycles the user has done.
 type Phase = 'inhale' | 'hold1' | 'exhale' | 'hold2';
 const PHASES: { phase: Phase; label: string; seconds: number }[] = [
   { phase: 'inhale', label: 'Breathe in', seconds: 4 },
@@ -65,25 +78,31 @@ const PHASES: { phase: Phase; label: string; seconds: number }[] = [
   { phase: 'exhale', label: 'Breathe out', seconds: 4 },
   { phase: 'hold2', label: 'Hold empty', seconds: 4 },
 ];
+const SECONDS_PER_CYCLE = PHASES.reduce((s, p) => s + p.seconds, 0); // 16
+const TOTAL_SECONDS = 4 * 60; // 4 minutes
+const TOTAL_CYCLES = Math.floor(TOTAL_SECONDS / SECONDS_PER_CYCLE); // 15
 
 function BoxBreathingScreen() {
   // v0.5 + v0.7: combined phase+seconds into a single state object so the
   // setInterval can use only functional updaters. Effect deps are
-  // [running] only — the interval stays alive for the entire session,
-  // not torn down/rebuilt every 4s on phase advance.
+  // [running, completed] only — the interval stays alive for the entire
+  // session, not torn down/rebuilt every 4s on phase advance.
   //
-  // Phase transitions: 4s inhale → 4s hold1 → 4s exhale → 4s hold2 →
-  // (rolls back to inhale). One full cycle = 16s. The phase cycle
-  // counter in the eyebrow displays 1-4.
+  // v0.8: also tracks `completed` cycles. When completed === TOTAL_CYCLES
+  // the timer auto-stops and shows a 'Done' state. This honors the
+  // "4 minutes" promise from the TodayScreen card.
   type State = { phaseIndex: number; secondsLeft: number };
-  const [{ phaseIndex, secondsLeft }, setState] = useState<State>({
+  const [state, setState] = useState<State>({
     phaseIndex: 0,
     secondsLeft: PHASES[0].seconds,
   });
+  const { phaseIndex, secondsLeft } = state;
   const [running, setRunning] = useState(false);
+  const [completed, setCompleted] = useState(0);
+  const finished = completed >= TOTAL_CYCLES;
 
   useEffect(() => {
-    if (!running) return;
+    if (!running || finished) return;
     const id = setInterval(() => {
       setState((prev) => {
         if (prev.secondsLeft > 1) {
@@ -93,7 +112,7 @@ function BoxBreathingScreen() {
         // closed (the actual use case for a breathing exercise) get a
         // non-visual cue when the phase changes. Different intensity per
         // phase — inhale/exhale get a soft tap (light work), holds get a
-        // notification (the "boundary" moment). Web and iOS simulator are
+        // notification (the 'boundary' moment). Web and iOS simulator are
         // no-ops; physical iOS/Android devices get the real feedback.
         const nextIndex = (prev.phaseIndex + 1) % PHASES.length;
         const nextPhase = PHASES[nextIndex];
@@ -109,11 +128,17 @@ function BoxBreathingScreen() {
         } catch {
           // expo-haptics not available (e.g. web bundling); silently no-op.
         }
+        // v0.8: when we wrap back to inhale (nextIndex === 0), one cycle
+        // is complete. Increment `completed`; if we've hit TOTAL_CYCLES,
+        // the early-return at the top of the next tick stops the timer.
+        if (nextIndex === 0) {
+          setCompleted((c) => c + 1);
+        }
         return { phaseIndex: nextIndex, secondsLeft: nextPhase.seconds };
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [running]);
+  }, [running, finished]);
 
   const current = PHASES[phaseIndex];
   const scale =
@@ -128,33 +153,66 @@ function BoxBreathingScreen() {
   return (
     <ScreenContainer scroll={false}>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>BODY · 4 MIN · CYCLE {phaseIndex + 1} OF 4</Text>
+        <Text style={styles.eyebrow}>
+          BODY · 4 MIN · CYCLE {Math.min(completed + 1, TOTAL_CYCLES)} OF {TOTAL_CYCLES}
+          {finished ? ' · DONE' : ''}
+        </Text>
       </View>
 
       <View style={styles.center}>
         <View
           style={[styles.bubble, { transform: [{ scale }] }]}
           accessibilityRole="image"
-          accessibilityLabel={`${current.label}, ${secondsLeft} seconds remaining`}
+          accessibilityLabel={
+            finished
+              ? 'Box breathing complete'
+              : `${current.label}, ${secondsLeft} seconds remaining`
+          }
         >
-          <Text style={styles.bubbleNumber}>{secondsLeft}</Text>
+          <Text style={styles.bubbleNumber}>{finished ? '✓' : secondsLeft}</Text>
           <Text
             style={styles.bubblePhase}
             accessibilityLiveRegion="polite"
             accessibilityElementsHidden={false}
           >
-            {current.label.toUpperCase()}
+            {finished ? 'COMPLETE' : current.label.toUpperCase()}
           </Text>
         </View>
         <Text style={styles.instructions}>Inhale · Hold · Exhale · Hold</Text>
       </View>
 
       <Pressable
-        onPress={() => setRunning((r) => !r)}
+        onPress={() => {
+          if (finished) {
+            // Reset for another session.
+            setCompleted(0);
+            setState({ phaseIndex: 0, secondsLeft: PHASES[0].seconds });
+            setRunning(false);
+            return;
+          }
+          setRunning((r) => !r);
+        }}
+        accessibilityRole="button"
+        accessibilityState={{ busy: running }}
+        accessibilityLabel={
+          finished
+            ? 'Restart box breathing'
+            : running
+              ? 'Pause box breathing'
+              : secondsLeft === PHASES[0].seconds
+                ? 'Begin box breathing'
+                : 'Resume box breathing'
+        }
         style={({ pressed }) => [styles.cta, pressed && { opacity: 0.8 }]}
       >
         <Text style={styles.ctaText}>
-          {running ? 'Pause' : secondsLeft === PHASES[0].seconds ? 'Begin' : 'Resume'}
+          {finished
+            ? 'Restart'
+            : running
+              ? 'Pause'
+              : secondsLeft === PHASES[0].seconds
+                ? 'Begin'
+                : 'Resume'}
         </Text>
       </Pressable>
     </ScreenContainer>

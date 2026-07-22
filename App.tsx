@@ -7,10 +7,15 @@
 // stretch across a laptop screen. The wrapper is a no-op on iOS/Android
 // because they render full-screen by default — the constraint only
 // matters on the web target.
+//
+// v0.8: wrapped in ErrorBoundary so a render error anywhere in the
+// navigator tree shows a recovery screen instead of a blank app.
+// See plans/05-full-codebase-review-2026-07-22.md P0-6.
 import React, { useEffect } from 'react';
 import { Dimensions, Platform, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { RootNav } from './src/nav/RootNav';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { verifyResourceReachability } from './src/safety/crisis';
 import { colors } from './src/theme';
 
@@ -43,7 +48,9 @@ export default function App() {
   );
 
   // iOS/Android: render full-screen, no wrapper.
-  if (Platform.OS !== 'web') return content;
+  if (Platform.OS !== 'web') {
+    return <ErrorBoundary>{content}</ErrorBoundary>;
+  }
 
   // Web: phone-shaped frame, centered on a soft-purple desktop background.
   // The Dimensions call gets the actual viewport height so the frame
@@ -75,7 +82,7 @@ export default function App() {
           overflow: 'hidden',
         }}
       >
-        {content}
+        <ErrorBoundary>{content}</ErrorBoundary>
       </View>
     </View>
   );
