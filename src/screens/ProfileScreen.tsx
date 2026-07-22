@@ -95,9 +95,13 @@ export function ProfileScreen() {
     const activeId = await storage.getActiveSessionId();
     const active = activeId ? await storage.getChatSession(activeId) : null;
     const chatCount = active?.messages.length ?? 0;
+    // v0.5: JSON export is a future-update feature; today the alert
+    // surfaces what's on-device so the user understands the volume
+    // before the real export ships. (Same Alert.alert pattern as
+    // showLegal — placeholder until SettingsScreen ships.)
     Alert.alert(
       'Export data',
-      `You have ${moods.length} mood entries and ${chatCount} messages in your current chat. (JSON export ships in week 2.)`,
+      `You have ${moods.length} mood entries and ${chatCount} messages in your current chat. JSON export ships in a future update.`,
     );
   }
 
@@ -123,10 +127,12 @@ export function ProfileScreen() {
   }
 
   function showLegal() {
-    // v0.5: Settings screen is out of scope. Until v1 ships the real
-    // Disclaimer / Privacy / EULA pages, show a placeholder modal that
-    // surfaces the build provenance so users can verify what they're
-    // running.
+    // v0.5 + v0.8: Settings screen is out of scope. Until v1 ships the
+    // real Disclaimer / Privacy / EULA pages, show a placeholder modal
+    // that surfaces the build provenance so users can verify what
+    // they're running. The route type Settings in RootNav.tsx is
+    // forward-compatible — adding the real screen is a one-line
+    // <Stack.Screen> registration with no type churn.
     Alert.alert(
       'Fernly — legal & safety',
       'Fernly is not therapy. If you are in crisis, contact 988 (US) or 116 123 (UK).\n\nFull Disclaimer, Privacy Policy, and EULA ship in a future update. Open-source decision is on the roadmap.',
