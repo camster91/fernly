@@ -463,9 +463,15 @@ export const storage = {
 
     // 2. Wipe AsyncStorage keys EXCEPT the session index, which we still
     // need for the enumeration below.
+    //
+    // AsyncStorage v2 (which expo install --fix rolled us back to) doesn't
+    // ship a batched `removeMany` API. Fall back to parallel removeItem
+    // calls — same correctness, just N round-trips instead of one. The
+    // session index is filtered out so we can read it in step 1 above
+    // and then drop it last in step 5.
     const keysToRemove = Object.values(ASYNC_KEYS).filter((k) => k !== ASYNC_KEYS.sessionKeyIndex);
     try {
-      await AsyncStorage.removeMany(keysToRemove);
+      await Promise.all(keysToRemove.map((k) => AsyncStorage.removeItem(k).catch(() => undefined)));
     } catch {
       // continue — best-effort wipe
     }
