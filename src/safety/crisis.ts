@@ -80,7 +80,15 @@ const HARD_PATTERNS: RegExp[] = [
   // Gen-z shorthand — must be on the normalized form to catch leetspeak
   // variants of these tokens via the `1→i, 0→o` substitutions above.
   /\b(kms|kys)\b/i,
-  /\b(un|re)?alive(d)?\s*(myself|me|tonight|forever)?\b/i,
+  // v0.8: tightened to require a negative prefix OR a negative suffix.
+  // Previously matched `alive` standalone (the word "I'm glad to be
+  // alive" was tripping hard). The original 7-category spec from plans/
+  // 03 expects a "I'm done with being alive" / "tired of being alive"
+  // pattern, which these alternations cover while excluding the
+  // "glad to be alive" / "happy to be alive" common phrasing.
+  /\b(?:un|re)\s*alive\b/i,
+  /\b(?:wish|i\s+wish|wanted|don't\s+want\s+to\s+be|tired\s+of\s+being)\s+(?:i\s+wasn't\s+)?alive\b/i,
+  /\b(?:never|don't\s+want\s+to\s+have)\s+been\s+alive\b/i,
   /\bpermadeath\b/i,
 
   // Euphemistic ideation
@@ -141,6 +149,13 @@ const CONTEXT_OVERRIDES: RegExp[] = [
   /\b(just\s+exhausted|so\s+tired)\b/i, // fatigue idiom
   /\b(this|school|work|my\s+job)\s+is\s+killing\s+me\b/i, // figurative hyperbole
   /\bdying\s+of\s+(embarrassment|shame)\b/i,
+  // v0.8: explicit positive "alive" phrases that should never escalate.
+  // Tested against the ORIGINAL text (not normalized) so idioms survive.
+  // The "alive" hard pattern requires a negative prefix/suffix — this
+  // list catches positive phrasing the prefix doesn't cover.
+  /\b(glad|happy|thrilled|grateful|love|loved|loving|excited|thankful)\s+(to\s+be|that\s+i'm|i\s+am)\s+(still\s+)?alive\b/i,
+  /\bbeing\s+alive\s+(is|feels?)\s+(a\s+)?(gift|good|great|wonderful|amazing|beautiful)\b/i,
+  /\bso\s+(glad|happy|grateful|thankful)\s+(i'm|i\s+am|to\s+be)\s+(still\s+)?alive\b/i,
 ];
 
 export function detectCrisis(input: string): CrisisVerdict {

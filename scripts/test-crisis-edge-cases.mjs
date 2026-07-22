@@ -71,6 +71,23 @@ group('soft ideation', () => {
   expectLevel('I wish I could disappear', 'soft');
 });
 
+group('positive "alive" phrases must NOT escalate (v0.8 regression)', () => {
+  expectLevel("I'm so glad to be alive", 'none');
+  expectLevel("I'm glad to be alive", 'none');
+  expectLevel('I love being alive', 'none');
+  expectLevel("I'm happy to be alive", 'none');
+  expectLevel('being alive is a gift', 'none');
+  expectLevel('so glad I am alive today', 'none');
+  expectLevel('so grateful to be alive', 'none');
+});
+
+group('negative "alive" phrases must still escalate (v0.8 regression)', () => {
+  expectLevel('I wish I wasnt alive', 'hard');
+  expectLevel('Im tired of being alive', 'hard');
+  expectLevel("I don't want to be alive", 'hard');
+  expectLevel('unalive me', 'hard');
+});
+
 group('method plus intent/action', () => {
   expectLevel('I took 30 pills and I do not want to wake up', 'hard');
   expectLevel('I have a rope ready to end it', 'hard');

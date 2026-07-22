@@ -63,7 +63,13 @@ export function OnboardingScreen({ onDone }: Props) {
 
   const total = 5;
   function next() {
-    if (step < total) setStep((s) => s + 1);
+    // v0.8: trigger save() at `total - 1` (= 4) so the "Begin" button on
+    // step 5 (the last step) calls save() instead of advancing to a
+    // blank step 6. Previously `step < total` left an off-by-one where
+    // tapping "Begin" on step 4 (the last step with content) set step to
+    // 5, no JSX rendered, and the user was stuck on a blank screen.
+    // See plans/05-full-codebase-review-2026-07-22.md P0-2.
+    if (step < total - 1) setStep((s) => s + 1);
     else save();
   }
   function back() {

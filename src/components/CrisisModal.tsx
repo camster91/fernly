@@ -372,7 +372,12 @@ const styles = StyleSheet.create({
     // font scaling pushing the height below threshold.
     minHeight: 56,
   },
-  resourceBtnPrimary: { backgroundColor: colors.warn, borderColor: colors.warn },
+  // v0.8: use warnDeep (#C92A4A) — paper foreground on warnDeep measures
+  // ~5.0:1, clears WCAG AA-body 4.5:1. The previous warn (#E55D75) was
+  // 3.25:1 — failed AA. The architectural fix was supposed to ship in
+  // PR UX3 (theme.ts added warnDeep) but the CrisisModal never switched
+  // over. See plans/05-full-codebase-review-2026-07-22.md P0-3.
+  resourceBtnPrimary: { backgroundColor: colors.warnDeep, borderColor: colors.warnDeep },
   resourceText: { fontWeight: '700', fontSize: 14, color: colors.text },
   // Primary CTA foreground was colors.paper on colors.warn (3.25:1, fails
   // AA-body 4.5:1). Switch to white on a slightly darker warn shade so
