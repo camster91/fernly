@@ -108,7 +108,12 @@ function migrateChatSession(raw: unknown): ChatSession | null {
   if (typeof s.id !== 'string' || !Array.isArray(s.messages)) return null;
   const messages = s.messages.filter(
     (m): m is ChatMessage =>
-      !!m && typeof m === 'object' && 'id' in m && 'role' in m && 'text' in m && 'at' in m,
+      !!m &&
+      typeof m === 'object' &&
+      typeof (m as ChatMessage).id === 'string' &&
+      ((m as ChatMessage).role === 'user' || (m as ChatMessage).role === 'fernly') &&
+      typeof (m as ChatMessage).text === 'string' &&
+      typeof (m as ChatMessage).at === 'string',
   );
   return {
     id: s.id,
@@ -183,8 +188,20 @@ async function secureSet(key: string, value: unknown): Promise<void> {
   try {
     await SecureStore.setItemAsync(key, JSON.stringify(value), SECURE_OPTIONS);
   } catch {
-    // intentionally swallow — caller should not crash
+    // Swallow per-write errors. Chat-write paths (setChatSession,
+    // appendMessageToSession) are best-effort: a failed write loses the
+    // in-flight message but the next send retries. Audit-log writes
+    // (appendCrisisAudit) are fire-and-forget by design.
+    //
+    // Callers that need to detect a failed write should use
+    // secureSetStrict below. Today that's only getChats() legacy
+    // migration, which must not delete the legacy blob until every
+    // per-session key actually exists.
   }
+}
+
+async function secureSetStrict(key: string, value: unknown): Promise<void> {
+  await SecureStore.setItemAsync(key, JSON.stringify(value), SECURE_OPTIONS);
 }
 
 async function secureDelete(key: string): Promise<void> {
@@ -228,12 +245,21 @@ async function writeSessionIndex(list: string[]): Promise<void> {
   }
 }
 
-async function addToSessionIndex(key: string): Promise<void> {
+// Serial append — Promise.all would race on readSessionIndex() since
+// each call returns the same base list before either writes its update.
+// Sequential is fine here: migration is rare and the session count is
+// small (typically <10).
+async function addToSessionIndexBatch(keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
   const list = await readSessionIndex();
-  if (!list.includes(key)) {
-    list.push(key);
-    await writeSessionIndex(list);
+  for (const key of keys) {
+    if (!list.includes(key)) list.push(key);
   }
+  await writeSessionIndex(list);
+}
+
+async function addToSessionIndex(key: string): Promise<void> {
+  await addToSessionIndexBatch([key]);
 }
 
 // ---- Public API ----
@@ -373,11 +399,20 @@ export const storage = {
       // blob if all writes succeed. If a write fails, the legacy blob
       // stays so the migration can be retried (e.g. quota exceeded
       // recovery) rather than silently losing the user's chat history.
+      // We use secureSetStrict (non-swallowing) so Promise.allSettled
+      // can distinguish real failures from successful writes — the
+      // regular secureSet swallows errors at the per-call level.
       const results = await Promise.allSettled(
-        sessions.map((s) => storage.setChatSession(s)),
+        sessions.map((s) =>
+          secureSetStrict(sessionKey(s.id), { ...s, version: CURRENT_CHAT_VERSION }),
+        ),
       );
       const allOk = results.every((r) => r.status === 'fulfilled');
       if (allOk) {
+        // Add all keys to the index BEFORE deleting the legacy blob,
+        // so clearAll() can find them. addToSessionIndexBatch is serial
+        // (not Promise.all) to avoid the read-modify-write race.
+        await addToSessionIndexBatch(sessions.map((s) => sessionKey(s.id)));
         await secureDelete(SECURE_KEYS.chats);
       }
       return sessions;
@@ -438,9 +473,7 @@ export const storage = {
 
     // 2. Wipe AsyncStorage keys EXCEPT the session index, which we still
     // need for the enumeration below.
-    const keysToRemove = Object.values(ASYNC_KEYS).filter(
-      (k) => k !== ASYNC_KEYS.sessionKeyIndex,
-    );
+    const keysToRemove = Object.values(ASYNC_KEYS).filter((k) => k !== ASYNC_KEYS.sessionKeyIndex);
     try {
       await AsyncStorage.removeMany(keysToRemove);
     } catch {
