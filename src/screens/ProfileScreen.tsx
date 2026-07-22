@@ -38,23 +38,53 @@ export function ProfileScreen() {
     })();
   }, []);
 
-  function row(icon: string, title: string, sub?: string, onPress?: () => void) {
+  // Settings row. When `onPress` is set it's a tappable row with a
+  // chevron and a hover state. When unset it's a read-only display row
+  // (e.g. "Your mascot" — the value is set during onboarding and not
+  // editable in v0; show as plain text so users don't think tapping
+  // does something).
+  function row(
+    icon: string,
+    title: string,
+    sub?: string,
+    onPress?: () => void,
+    destructive?: boolean,
+  ) {
+    const titleColor = destructive ? colors.warn : colors.text;
+    if (!onPress) {
+      return (
+        <View
+          style={styles.row}
+          accessible={true}
+          accessibilityRole="text"
+          accessibilityLabel={`${title}${sub ? `, ${sub}` : ''}`}
+        >
+          <View style={styles.rowIcon}>
+            <Text style={{ fontSize: 18 }}>{icon}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowTitle}>{title}</Text>
+            {sub && <Text style={styles.rowSub}>{sub}</Text>}
+          </View>
+        </View>
+      );
+    }
     return (
       <Pressable
         onPress={onPress}
-        style={({ pressed }) => [
-          styles.row,
-          pressed && onPress && { backgroundColor: colors.lavender50 },
-        ]}
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        accessibilityHint={sub}
+        style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.lavender50 }]}
       >
         <View style={styles.rowIcon}>
           <Text style={{ fontSize: 18 }}>{icon}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.rowTitle}>{title}</Text>
+          <Text style={[styles.rowTitle, { color: titleColor }]}>{title}</Text>
           {sub && <Text style={styles.rowSub}>{sub}</Text>}
         </View>
-        {onPress && <Text style={styles.chevron}>›</Text>}
+        <Text style={styles.chevron}>›</Text>
       </Pressable>
     );
   }
@@ -130,9 +160,9 @@ export function ProfileScreen() {
           'Your goals',
           profile?.goals?.length ? `${profile.goals.length} chosen` : 'Not set',
         )}
-        {row('📥', 'Export your data', 'JSON, one tap', exportData)}
-        {row('⚖️', 'Legal & safety', 'Disclaimer · Privacy · EULA', showLegal)}
-        {row('🗑', 'Reset Fernly', 'Clear all data', reset)}
+        {row('📥', 'Export your data', 'Tap to export your data as JSON', exportData)}
+        {row('⚖️', 'Legal & safety', 'Tap to read disclaimer, privacy, and EULA', showLegal)}
+        {row('🗑', 'Reset Fernly', 'Tap to clear all your data', reset, true)}
       </View>
     </ScreenContainer>
   );
