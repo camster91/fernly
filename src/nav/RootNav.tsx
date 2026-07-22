@@ -62,27 +62,45 @@ function Tabs() {
       <Tab.Screen
         name="Today"
         component={TodayScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="✿" focused={focused} /> }}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon glyph="✿" focused={focused} />,
+          // v0.7: VoiceOver/TalkBack previously announced the emoji glyph
+          // ("cherry blossom") instead of "Today, tab 1 of 5". Explicit
+          // labels fix the disambiguation.
+          tabBarAccessibilityLabel: 'Today, tab 1 of 5',
+        }}
       />
       <Tab.Screen
         name="Chat"
         component={ChatScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="💬" focused={focused} /> }}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon glyph="💬" focused={focused} />,
+          tabBarAccessibilityLabel: 'Chat, tab 2 of 5',
+        }}
       />
       <Tab.Screen
         name="Practice"
         component={PracticeScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="🧘" focused={focused} /> }}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon glyph="🧘" focused={focused} />,
+          tabBarAccessibilityLabel: 'Practice, tab 3 of 5',
+        }}
       />
       <Tab.Screen
         name="Insights"
         component={InsightsScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="📊" focused={focused} /> }}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon glyph="📊" focused={focused} />,
+          tabBarAccessibilityLabel: 'Insights, tab 4 of 5',
+        }}
       />
       <Tab.Screen
         name="You"
         component={ProfileScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="👤" focused={focused} /> }}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon glyph="👤" focused={focused} />,
+          tabBarAccessibilityLabel: 'Profile, tab 5 of 5',
+        }}
       />
     </Tab.Navigator>
   );

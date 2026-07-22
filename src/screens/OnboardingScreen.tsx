@@ -98,7 +98,7 @@ export function OnboardingScreen({ onDone }: Props) {
 
   return (
     <ScreenContainer scroll={false}>
-      <View style={styles.dots}>
+      <View style={styles.dots} accessible={false} accessibilityElementsHidden>
         {Array.from({ length: total }).map((_, i) => (
           <View
             key={i}
@@ -123,6 +123,8 @@ export function OnboardingScreen({ onDone }: Props) {
               style={styles.input}
               returnKeyType="next"
               onSubmitEditing={next}
+              accessibilityLabel="Your first name"
+              accessibilityHint="What Fernly should call you in the app"
             />
           </Step>
         )}
@@ -135,6 +137,10 @@ export function OnboardingScreen({ onDone }: Props) {
                 <Pressable
                   key={m}
                   onPress={() => setMood(m)}
+                  accessibilityRole="button"
+                  accessibilityLabel={m}
+                  accessibilityState={{ selected: mood === m }}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   style={[styles.pill, mood === m && styles.pillActive]}
                 >
                   <Text style={[styles.pillText, mood === m && styles.pillTextActive]}>{m}</Text>
@@ -152,6 +158,10 @@ export function OnboardingScreen({ onDone }: Props) {
                 <Pressable
                   key={g.id}
                   onPress={() => toggleGoal(g.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={g.label}
+                  accessibilityState={{ selected: goals.includes(g.id) }}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   style={[styles.pill, goals.includes(g.id) && styles.pillActive]}
                 >
                   <Text style={[styles.pillText, goals.includes(g.id) && styles.pillTextActive]}>
@@ -171,6 +181,9 @@ export function OnboardingScreen({ onDone }: Props) {
                 <Pressable
                   key={m.id}
                   onPress={() => setMascot(m.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Choose ${m.id} as your friend mascot`}
+                  accessibilityState={{ selected: mascot === m.id }}
                   style={[styles.mascotBox, mascot === m.id && styles.mascotBoxActive]}
                 >
                   <Text style={styles.mascotEmoji}>{m.emoji}</Text>
@@ -188,6 +201,9 @@ export function OnboardingScreen({ onDone }: Props) {
                 <Pressable
                   key={tn.id}
                   onPress={() => setTone(tn.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${tn.label} tone. ${tn.sample}`}
+                  accessibilityState={{ selected: tone === tn.id }}
                   style={[
                     styles.toneCard,
                     { backgroundColor: tn.bg },
@@ -205,13 +221,23 @@ export function OnboardingScreen({ onDone }: Props) {
 
       <View style={styles.footer}>
         {step > 0 && (
-          <Pressable onPress={back} style={styles.back}>
+          <Pressable
+            onPress={back}
+            accessibilityRole="button"
+            accessibilityLabel="Go back to the previous step"
+            style={styles.back}
+          >
             <Text style={styles.backText}>Back</Text>
           </Pressable>
         )}
         <Pressable
           onPress={next}
           disabled={!canAdvance()}
+          accessibilityRole="button"
+          accessibilityLabel={
+            step === total - 1 ? 'Begin using Fernly' : 'Continue to the next step'
+          }
+          accessibilityState={{ disabled: !canAdvance() }}
           style={({ pressed }) => [
             styles.cta,
             !canAdvance() && styles.ctaDisabled,
