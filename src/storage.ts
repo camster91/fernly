@@ -69,7 +69,6 @@ function emitReset() {
 const ASYNC_KEYS = {
   profile: '@fernly/profile',
   moods: '@fernly/moods',
-  sessions: '@fernly/sessions',
   onboarding: '@fernly/onboarding-complete',
   activeSessionId: '@fernly/active-session-id',
   // v0.6: list of all per-session SecureStore keys that ever held chat
@@ -280,15 +279,6 @@ export const storage = {
     const all = await storage.getMoods();
     const filtered = all.filter((x) => x.date !== m.date);
     await asyncSet(ASYNC_KEYS.moods, [m, ...filtered]);
-  },
-
-  // --- Exercise sessions (unencrypted AsyncStorage) ---
-  async getSessions() {
-    return (await asyncGet<unknown[]>(ASYNC_KEYS.sessions)) ?? [];
-  },
-  async addSession(s: unknown) {
-    const all = await storage.getSessions();
-    await asyncSet(ASYNC_KEYS.sessions, [s, ...all]);
   },
 
   // --- Onboarding flag (unencrypted AsyncStorage) ---
@@ -505,10 +495,5 @@ export const storage = {
     // above partially failed — the partial-failure case is rare but
     // we want listeners to know we attempted a reset.
     emitReset();
-  },
-
-  // --- Admin-only: clear the crisis audit log ---
-  async __clearCrisisAudit() {
-    await secureDelete(SECURE_KEYS.crisisAudit);
   },
 };

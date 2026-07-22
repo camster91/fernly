@@ -5,14 +5,8 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
+import { MASCOT_EMOJI } from '../data/mascots';
 import type { UserProfile } from '../types';
-
-const MASCOT_EMOJI: Record<string, string> = {
-  moon: '🌙',
-  fox: '🦊',
-  turtle: '🐢',
-  bee: '🐝',
-};
 
 const TONE_LABEL: Record<string, string> = {
   soft: '🕊 Soft',
