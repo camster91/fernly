@@ -11,11 +11,16 @@ import { exercises } from '../data/exercises';
 import type { RootStackParamList } from '../nav/RootNav';
 
 const MODALITY_COLOR: Record<string, { bg: string; fg: string }> = {
-  CBT: { bg: colors.lavender100, fg: colors.lavender700 },
-  ACT: { bg: colors.mint100, fg: '#1c8e58' },
-  GROUNDING: { bg: colors.yellow100, fg: '#8a6500' },
-  BODY: { bg: colors.peach100, fg: colors.peach500 },
-  REFLECTION: { bg: colors.rose100, fg: colors.warn },
+  // v0.7: foreground tokens unified to colors.ink for AA-body compliance.
+  // Prior tokens (`#1c8e58`, `#8a6500`, `colors.peach500`, `colors.warn`)
+  // were 1.99–3.45:1 against their pastel backgrounds at 10pt bold —
+  // failed AA-body AND were below the AA-large 14pt-bold threshold.
+  // colors.ink is 13.6:1 on every pastel here.
+  CBT: { bg: colors.lavender100, fg: colors.ink },
+  ACT: { bg: colors.mint100, fg: colors.ink },
+  GROUNDING: { bg: colors.yellow100, fg: colors.ink },
+  BODY: { bg: colors.peach100, fg: colors.ink },
+  REFLECTION: { bg: colors.rose100, fg: colors.ink },
 };
 
 export function PracticeScreen() {

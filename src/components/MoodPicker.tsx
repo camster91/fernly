@@ -27,6 +27,10 @@ export function MoodPicker({ value, onChange }: Props) {
           <Pressable
             key={m.score}
             onPress={() => onChange(m.score)}
+            accessibilityRole="button"
+            accessibilityLabel={`Mood: ${m.label}, score ${m.score} of 6`}
+            accessibilityState={{ selected: active }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={({ pressed }) => [
               styles.pill,
               active && styles.active,

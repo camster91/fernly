@@ -401,16 +401,27 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
   },
   input: { flex: 1, fontSize: 14, color: colors.text, paddingVertical: 8, maxHeight: 120 },
+  // WCAG 2.5.5 AAA: 44×44 minimum tap target. Was 56×38 (height < 44);
+  // hand tremor or imprecise taps in distress failed to register.
   mic: {
-    width: 56,
-    height: 38,
-    borderRadius: 19,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   micDisabled: { backgroundColor: colors.ink4 },
-  micSoon: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.line, width: 64 },
+  // Voice-coming-soon placeholder kept 64-wide to fit "Coming soon"
+  // text, but explicit minHeight 44 + a11y role/label so it isn't
+  // mistaken for an active button.
+  micSoon: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: colors.line,
+    minHeight: 44,
+    paddingHorizontal: 8,
+  },
   micSoonText: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
   micIcon: { color: colors.paper, fontSize: 18, fontWeight: '700' },
 });
