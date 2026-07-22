@@ -78,6 +78,10 @@ export function MoodCheckInScreen() {
             <Pressable
               key={w}
               onPress={() => setWord(w === word ? undefined : w)}
+              accessibilityRole="button"
+              accessibilityLabel={w}
+              accessibilityState={{ selected: word === w }}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
               style={[styles.wordPill, word === w && styles.wordPillActive]}
             >
               <Text style={[styles.wordText, word === w && styles.wordTextActive]}>{w}</Text>
@@ -89,6 +93,9 @@ export function MoodCheckInScreen() {
       <Pressable
         onPress={save}
         disabled={!score}
+        accessibilityRole="button"
+        accessibilityLabel={score ? 'Save mood check-in' : 'Pick a mood first'}
+        accessibilityState={{ disabled: !score }}
         style={({ pressed }) => [
           styles.cta,
           !score && styles.ctaDisabled,

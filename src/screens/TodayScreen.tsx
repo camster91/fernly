@@ -158,7 +158,12 @@ export function TodayScreen() {
         })}
       </View>
 
-      <Card variant="soft" onPress={() => nav.navigate('MoodCheckIn')}>
+      <Card
+        variant="soft"
+        onPress={() => nav.navigate('MoodCheckIn')}
+        accessibilityLabel={todayMood ? "Update today's mood check-in" : 'Start a mood check-in'}
+        accessibilityHint="Opens the mood picker — 30 seconds"
+      >
         <Text style={cardStyles.eyebrow}>CHECK-IN · 30 SEC</Text>
         <Text style={cardStyles.title}>
           {todayMood ? "Today's mood" : greetingForHour(hour) + ' mood'}
@@ -173,13 +178,19 @@ export function TodayScreen() {
       <Card
         variant="peach"
         onPress={() => nav.navigate('Exercise', { exerciseId: 'box-breathing' })}
+        accessibilityLabel="Today's practice: Box breathing, 4 minutes"
+        accessibilityHint="Opens the box breathing exercise"
       >
         <Text style={cardStyles.eyebrow}>TODAY'S PRACTICE</Text>
         <Text style={cardStyles.title}>Box breathing</Text>
         <Text style={cardStyles.sub}>4 minutes. Calms your nervous system fast.</Text>
       </Card>
 
-      <Card onPress={() => nav.navigate('Tabs', { screen: 'Chat' })}>
+      <Card
+        onPress={() => nav.navigate('Tabs', { screen: 'Chat' })}
+        accessibilityLabel="Open Fernly chat"
+        accessibilityHint="Opens a conversation with your mascot"
+      >
         <Text style={cardStyles.eyebrow}>TALK IT OUT</Text>
         <Text style={cardStyles.title}>Open Fernly</Text>
         <Text style={cardStyles.sub}>A small conversation about whatever's here.</Text>
