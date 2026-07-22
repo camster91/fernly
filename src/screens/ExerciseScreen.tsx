@@ -40,13 +40,17 @@ export function ExerciseScreen() {
           // silently bounce back. Disabled with explicit "Coming soon"
           // copy so the user understands what's happening. The full
           // flows for thought-record, defusion, values-sort, etc. ship
-          // in build week 2 per the README.
+          // in a future release.
           disabled
+          accessibilityRole="button"
+          accessibilityLabel="Begin this exercise"
+          accessibilityState={{ disabled: true }}
+          accessibilityHint="Coming soon — this exercise is not yet available"
           style={({ pressed }) => [styles.cta, styles.ctaDisabled, pressed && { opacity: 0.8 }]}
         >
           <Text style={styles.ctaText}>Coming soon</Text>
         </Pressable>
-        <Text style={styles.note}>Flow builds out in build week 2.</Text>
+        <Text style={styles.note}>Flow builds out in a future update.</Text>
       </View>
     </ScreenContainer>
   );
