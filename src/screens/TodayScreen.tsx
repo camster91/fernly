@@ -20,12 +20,16 @@ function greetingForHour(h: number): string {
   if (h < 21) return 'Good evening';
   return 'Wind-down time';
 }
+export { greetingForHour };
 
 export function TodayScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [todayMood, setTodayMood] = useState<MoodEntry | null>(null);
   const [streak, setStreak] = useState(0);
+  // True when today is missing but yesterday was logged — UI shows the
+  // grace-period prompt to nudge the user to log today.
+  const [streakGrace, setStreakGrace] = useState(false);
   const [weekLog, setWeekLog] = useState<boolean[]>([
     false,
     false,
@@ -44,11 +48,21 @@ export function TodayScreen() {
         const moods = await storage.getMoods();
         const today = new Date().toISOString().slice(0, 10);
         setTodayMood(moods.find((m) => m.date === today) ?? null);
-        // Streak: count consecutive days from today backward using a Set
-        // for O(1) membership checks. O(n) instead of the prior O(n*days).
+        // Streak: count consecutive days from today backward. If today
+        // isn't logged yet but yesterday was, count from yesterday so
+        // the user sees "7-day streak" instead of "0" until they log
+        // today — most habit apps treat the day as a grace period.
         const moodDates = new Set(moods.map((m) => m.date));
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayIso = yesterday.toISOString().slice(0, 10);
+        // If today is missing but yesterday exists, start counting from
+        // yesterday. The user-facing prompt below communicates "log today
+        // to keep your N-day streak going".
+        const startFromYesterday = !moodDates.has(today) && moodDates.has(yesterdayIso);
         let count = 0;
         const d = new Date();
+        if (startFromYesterday) d.setDate(d.getDate() - 1);
         for (;;) {
           const iso = d.toISOString().slice(0, 10);
           if (moodDates.has(iso)) {
@@ -57,6 +71,7 @@ export function TodayScreen() {
           } else break;
         }
         setStreak(count);
+        setStreakGrace(startFromYesterday && count > 0);
         // Week strip: 7 booleans, oldest left, today right. Index 0 is
         // 6 days ago, index 6 is today. JS getDay(): 0=Sun..6=Sat.
         // The WEEKDAYS label array is [M,T,W,T,F,S,S]; mapping index 0
@@ -85,12 +100,15 @@ export function TodayScreen() {
       <View style={styles.greeting}>
         <Text style={styles.eyebrow}>
           {greetingForHour(hour).toUpperCase()} · {streak}-DAY STREAK
+          {streakGrace ? ' · LOG TODAY TO KEEP IT' : ''}
         </Text>
         <Text style={styles.hi}>Hey {firstName} 👋</Text>
         <Text style={styles.prompt}>
           {todayMood
             ? `Today's already logged as ${todayMood.score}/6. Anything else land?`
-            : 'How are you waking up today?'}
+            : streakGrace
+              ? `Log today to keep your ${streak}-day streak going.`
+              : 'How are you waking up today?'}
         </Text>
       </View>
 
@@ -125,8 +143,14 @@ export function TodayScreen() {
 
       <Card variant="soft" onPress={() => nav.navigate('MoodCheckIn')}>
         <Text style={cardStyles.eyebrow}>CHECK-IN · 30 SEC</Text>
-        <Text style={cardStyles.title}>Morning mood</Text>
-        <Text style={cardStyles.sub}>Tap an emoji that fits. That's it.</Text>
+        <Text style={cardStyles.title}>
+          {todayMood ? "Today's mood" : greetingForHour(hour) + ' mood'}
+        </Text>
+        <Text style={cardStyles.sub}>
+          {todayMood
+            ? 'Tap to update — your latest entry wins for today.'
+            : "Tap an emoji that fits. That's it."}
+        </Text>
       </Card>
 
       <Card

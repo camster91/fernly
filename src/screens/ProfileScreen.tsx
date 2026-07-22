@@ -25,11 +25,13 @@ export function ProfileScreen() {
         setProfile(p);
         const moods = await storage.getMoods();
         const chats = await storage.getChats();
-        const days =
-          moods.length > 0
-            ? Math.ceil((Date.now() - new Date(p?.createdAt || Date.now()).getTime()) / 86_400_000)
-            : 0;
-        setStats({ moods: moods.length, chats: chats.length, days });
+        // "DAYS" used to mean "days since account creation" — which is
+        // misleading for a user who installed the app, never logged a
+        // mood, and saw "100 DAYS" in their stats. Renamed to "ACTIVE
+        // DAYS" and computed from distinct mood-dates so the number
+        // reflects engagement. The label changed in the JSX below.
+        const activeDays = new Set(moods.map((m) => m.date)).size;
+        setStats({ moods: moods.length, chats: chats.length, days: activeDays });
       } catch {
         setStats({ moods: 0, chats: 0, days: 0 });
       }
@@ -115,7 +117,7 @@ export function ProfileScreen() {
       </View>
 
       <View style={styles.statsRow}>
-        <Stat bg={colors.lavender50} value={String(stats.days)} label="DAYS" />
+        <Stat bg={colors.lavender50} value={String(stats.days)} label="ACTIVE DAYS" />
         <Stat bg={colors.peach50} value={String(stats.moods)} label="MOODS" />
         <Stat bg={colors.mint50} value={String(profile?.goals?.length ?? 0)} label="GOALS" />
       </View>
