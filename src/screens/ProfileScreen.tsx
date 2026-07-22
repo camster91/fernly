@@ -106,36 +106,55 @@ export function ProfileScreen() {
   }
 
   async function reset() {
-    Alert.alert('Reset Fernly?', 'This clears your profile, moods, and chats. Cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Reset',
-        style: 'destructive',
-        onPress: async () => {
-          await storage.clearAll();
-          setProfile(null);
-          setStats({ moods: 0, chats: 0, days: 0 });
-          // The storage.clearAll() above emits a 'reset' event that
-          // RootNav subscribes to. RootNav re-reads the (now-empty)
-          // profile and flips onboarded=false, which causes the
-          // NavigationContainer to swap the Stack for OnboardingScreen.
-          // No nav.reset() needed — the conditional render in RootNav
-          // handles the route swap.
+    // v0.8: disclose the audit log retention in the confirm. The audit
+    // log (last 500 entries, schema-versioned, encrypted in SecureStore)
+    // intentionally survives clearAll() — it's for safety review, not
+    // user data. Users have a right to know what "clears everything"
+    // actually means. Plans/05-full-codebase-review-2026-07-22.md P1-8.
+    Alert.alert(
+      'Reset Fernly?',
+      'This clears your profile, mood entries, and chat history on this device. The crisis-pattern audit log (last 500 entries) is retained for safety review and is not user-editable. Cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await storage.clearAll();
+              setProfile(null);
+              setStats({ moods: 0, chats: 0, days: 0 });
+              // The storage.clearAll() above emits a 'reset' event that
+              // RootNav subscribes to. RootNav re-reads the (now-empty)
+              // profile and flips onboarded=false, which causes the
+              // NavigationContainer to swap the Stack for OnboardingScreen.
+              // No nav.reset() needed — the conditional render in RootNav
+              // handles the route swap.
+            } catch (err) {
+              // v0.8: surface deletion failures. Without this, a partial
+              // failure silently leaves sensitive data on disk while the
+              // user thinks Reset succeeded.
+              console.warn('[ProfileScreen] reset failed:', err);
+              Alert.alert(
+                "Couldn't complete reset",
+                'Some data may still be on this device. Try again, and if it keeps failing, restart the app.',
+              );
+            }
+          },
         },
-      },
-    ]);
+      ],
+    );
   }
 
   function showLegal() {
-    // v0.5 + v0.8: Settings screen is out of scope. Until v1 ships the
-    // real Disclaimer / Privacy / EULA pages, show a placeholder modal
-    // that surfaces the build provenance so users can verify what
-    // they're running. The route type Settings in RootNav.tsx is
-    // forward-compatible — adding the real screen is a one-line
-    // <Stack.Screen> registration with no type churn.
+    // v0.8: be honest about what 'Reset' actually clears. The crisis
+    // pattern audit log (last 500 entries) is intentionally retained
+    // — it's used for incident response and is NOT considered user
+    // content. Saying "clears all your data" while keeping it is a
+    // material privacy/trust mismatch.
     Alert.alert(
       'Fernly — legal & safety',
-      'Fernly is not therapy. If you are in crisis, contact 988 (US) or 116 123 (UK).\n\nFull Disclaimer, Privacy Policy, and EULA ship in a future update. Open-source decision is on the roadmap.',
+      'Fernly is not therapy. If you are in crisis, contact 988 (US) or 116 123 (UK).\n\nFull Disclaimer, Privacy Policy, and EULA ship in a future update. Open-source decision is on the roadmap.\n\nNote: your local chat history, mood entries, and profile are deleted by Reset. The crisis-pattern audit log (last 500 entries) is retained for safety review and is not user-editable.',
     );
   }
 
