@@ -107,9 +107,19 @@ function BoxBreathingScreen() {
       </View>
 
       <View style={styles.center}>
-        <View style={[styles.bubble, { transform: [{ scale }] }]}>
+        <View
+          style={[styles.bubble, { transform: [{ scale }] }]}
+          accessibilityRole="image"
+          accessibilityLabel={`${current.label}, ${secondsLeft} seconds remaining`}
+        >
           <Text style={styles.bubbleNumber}>{secondsLeft}</Text>
-          <Text style={styles.bubblePhase}>{current.label.toUpperCase()}</Text>
+          <Text
+            style={styles.bubblePhase}
+            accessibilityLiveRegion="polite"
+            accessibilityElementsHidden={false}
+          >
+            {current.label.toUpperCase()}
+          </Text>
         </View>
         <Text style={styles.instructions}>Inhale · Hold · Exhale · Hold</Text>
       </View>
