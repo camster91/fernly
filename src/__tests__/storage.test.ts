@@ -252,27 +252,26 @@ describe('reset regression (PR1)', () => {
     // assert global ordering (not just per-method).
     const log: Array<{ op: string; key: string }> = [];
     const originalGet = asyncStorage.getItem.getMockImplementation();
-    const originalRm = asyncStorage.removeItem.getMockImplementation();
-    const originalRmMany = asyncStorage.removeMany.getMockImplementation();
+    const originalRemove = asyncStorage.removeItem.getMockImplementation();
     asyncStorage.getItem.mockImplementation(async (k: string) => {
       log.push({ op: 'get', key: k });
       return originalGet ? originalGet(k) : null;
     });
     asyncStorage.removeItem.mockImplementation(async (k: string) => {
       log.push({ op: 'rm', key: k });
-      return originalRm ? originalRm(k) : undefined;
-    });
-    asyncStorage.removeMany.mockImplementation(async (ks: string[]) => {
-      log.push({ op: 'rmMany', key: ks.join(',') });
-      return originalRmMany ? originalRmMany(ks) : undefined;
+      return originalRemove ? originalRemove(k) : undefined;
     });
 
     await storage.clearAll();
 
-    // 1. removeMany must NOT contain the session index.
-    const rmMany = log.find((e) => e.op === 'rmMany');
-    expect(rmMany).toBeDefined();
-    expect(rmMany?.key).not.toContain(SESSION_INDEX);
+    // 1. None of the parallel removeItem calls (which replaced the
+    //    AsyncStorage v3 removeMany) should target the session index —
+    //    we filter it out so the read in step 1 can succeed first.
+    const sessionIndexRemoves = log.filter((e) => e.op === 'rm' && e.key === SESSION_INDEX);
+    // Allow at most ONE rm on sessionKeyIndex — the explicit step-5 drop.
+    // The PR1 invariant: NO removeItem on sessionKeyIndex happens before
+    // the getItem(sessionKeyIndex) read.
+    expect(sessionIndexRemoves.length).toBeLessThanOrEqual(1);
 
     // 2. Find the position of the last get(SESSION_INDEX) and the first
     //    rm(SESSION_INDEX). The read MUST come before the remove.
