@@ -8,10 +8,11 @@
 //   - Per-session SecureStore key, no full-array rewrite on send
 //   - Message cap: 200 messages per session (FIFO drop)
 //   - Inflight guard: isSending blocks duplicate sends
-//   - AbortController declared for future LLM call
 //   - TextInput maxLength: 4000 chars (prevents 10k-char pastes)
 //   - Memoized message bubble to avoid re-render on every keystroke
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// v0.7: removed abortRef + useRef (no fetch yet). When the LLM ships,
+// AbortController + useRef re-enter.
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -28,13 +29,14 @@ import { CrisisModal } from '../components/CrisisModal';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import { detectCrisis } from '../safety/crisis';
+import { MASCOT_EMOJI, MASCOT_EMOJI_FALLBACK } from '../data/mascots';
 import type { ChatMessage, CrisisAuditEntry, UserProfile, Tone } from '../types';
 
 const MAX_INPUT_LENGTH = 4000;
 
 // Deterministic mock responder — picks a reply based on user input + their tone.
 // NOT an LLM. Replace with real chat backend in build week 3.
-function mockReply(input: string, tone: Tone, _mascot: string): string {
+function mockReply(input: string, tone: Tone): string {
   const text = input.toLowerCase();
   const softBank = [
     'That sounds heavy. Want to sit with it for a sec?',
@@ -83,16 +85,8 @@ export function ChatScreen() {
   const [isSending, setIsSending] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
-  // AbortController for the future LLM call. Declared now so the v0 mock
-  // path can wire cancellation hooks; the mock itself is synchronous and
-  // doesn't need cancellation, but the next PR that adds a real fetch
-  // can reuse this.
-  const abortRef = useRef<AbortController | null>(null);
-
   useEffect(() => {
     let cancelled = false;
-    const controller = new AbortController();
-    abortRef.current = controller;
     (async () => {
       try {
         const p = await storage.getProfile();
@@ -127,7 +121,6 @@ export function ChatScreen() {
     })();
     return () => {
       cancelled = true;
-      controller.abort();
     };
   }, []);
 
@@ -154,7 +147,7 @@ export function ChatScreen() {
       }
 
       const userMsg: ChatMessage = {
-        id: `${Date.now()}-u`,
+        id: crypto.randomUUID(),
         role: 'user',
         text,
         at: new Date().toISOString(),
@@ -162,7 +155,7 @@ export function ChatScreen() {
 
       if (verdict.level === 'hard') {
         const blocked: ChatMessage = {
-          id: `${Date.now()}-f`,
+          id: crypto.randomUUID(),
           role: 'fernly',
           text: '[crisis modal shown — AI response suppressed]',
           at: new Date().toISOString(),
@@ -180,7 +173,7 @@ export function ChatScreen() {
         // encrypted SecureStore; schema-versioned.
         const audit: CrisisAuditEntry = {
           version: 1,
-          id: `${Date.now()}-audit`,
+          id: crypto.randomUUID(),
           at: new Date().toISOString(),
           severity: 'hard',
           matchedPhrase: verdict.matchedPhrase,
@@ -194,7 +187,7 @@ export function ChatScreen() {
       if (verdict.level === 'soft' && verdict.matchedPhrase) {
         const softAudit: CrisisAuditEntry = {
           version: 1,
-          id: `${Date.now()}-audit`,
+          id: crypto.randomUUID(),
           at: new Date().toISOString(),
           severity: 'soft',
           matchedPhrase: verdict.matchedPhrase,
@@ -202,14 +195,13 @@ export function ChatScreen() {
         storage.appendCrisisAudit(softAudit).catch(() => undefined);
       }
 
-      // v0 mock path — synchronous, no LLM fetch yet. Future PRs swap
-      // mockReply() for a fetch() and route through the abortRef.
+      // v0 mock path — synchronous, no LLM fetch yet. When the LLM
+      // ships, this is where the AbortController + fetch() wire in.
       const tone = profile?.tone ?? 'soft';
-      const mascot = profile?.mascot ?? 'moon';
       const replyMsg: ChatMessage = {
-        id: `${Date.now()}-f`,
+        id: crypto.randomUUID(),
         role: 'fernly',
-        text: mockReply(text, tone, mascot),
+        text: mockReply(text, tone),
         at: new Date().toISOString(),
       };
       const afterUser = await storage.appendMessageToSession(sessionId, userMsg);
@@ -221,15 +213,11 @@ export function ChatScreen() {
     }
   }
 
+  // Use the shared MASCOT_EMOJI map. Empty-state fallback is 🌙 (the
+  // onboarding default mascot) — not 🐝 as before — so the empty chat
+  // matches what the user picked during onboarding.
   const mascotEmoji = useMemo(
-    () =>
-      profile?.mascot === 'moon'
-        ? '🌙'
-        : profile?.mascot === 'fox'
-          ? '🦊'
-          : profile?.mascot === 'turtle'
-            ? '🐢'
-            : '🐝',
+    () => (profile?.mascot && MASCOT_EMOJI[profile.mascot]) || MASCOT_EMOJI_FALLBACK,
     [profile?.mascot],
   );
 

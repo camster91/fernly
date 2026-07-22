@@ -34,6 +34,10 @@ export type RootStackParamList = {
   Tabs: NavigatorScreenParams<TabParamList>;
   MoodCheckIn: undefined;
   Exercise: { exerciseId: string };
+  // Settings is reserved for a future in-app settings screen (privacy,
+  // data controls, tone change). Today the ProfileScreen "Legal & safety"
+  // row shows an Alert.alert placeholder; the route type is forward-
+  // compatible so the screen can land without further type churn.
   Settings: undefined;
 };
 

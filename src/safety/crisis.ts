@@ -173,11 +173,10 @@ export function detectCrisis(input: string): CrisisVerdict {
 }
 
 // Resources by locale. Verified helpline numbers as of 2026-07-10.
-//
 // v0.2 expansion: added es-MX, es-AR, fr-FR, pt-BR, de-DE branches.
 // Phone numbers sourced from each country's official crisis line directory.
-// TODO(v1): wire `expo-localization` and read locale at runtime instead
-// of relying on a hardcoded default.
+// v0.5: expo-localization IS wired now — pickLocale() in CrisisModal.tsx
+// reads the device locale at modal mount. The TODO is stale.
 export interface CrisisResource {
   name: string;
   phone?: string;

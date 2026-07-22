@@ -29,14 +29,6 @@ export interface MoodEntry {
   note?: string;
 }
 
-export interface ExerciseSession {
-  id: string;
-  exerciseId: string;
-  startedAt: string;
-  completedAt?: string;
-  data?: Record<string, unknown>; // exercise-specific input
-}
-
 export interface ChatMessage {
   id: string;
   role: 'user' | 'fernly';
