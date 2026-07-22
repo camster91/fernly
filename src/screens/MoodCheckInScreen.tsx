@@ -9,6 +9,7 @@ import { Card } from '../components/Card';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import type { MoodScore, MoodEntry } from '../types';
+import { greetingForHour } from './TodayScreen';
 
 const QUICK_WORDS = [
   'tired',
@@ -52,7 +53,9 @@ export function MoodCheckInScreen() {
   return (
     <ScreenContainer>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>MORNING CHECK-IN</Text>
+        <Text style={styles.eyebrow}>
+          {greetingForHour(new Date().getHours()).toUpperCase()} CHECK-IN
+        </Text>
         <Text style={styles.title}>How are you, really?</Text>
         <Text style={styles.sub}>No wrong answer. No streak loss. Just noticing.</Text>
       </View>
