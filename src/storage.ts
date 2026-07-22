@@ -38,6 +38,7 @@ import type { UserProfile, MoodEntry, ChatSession, ChatMessage, CrisisAuditEntry
 
 // ---- Constants ----
 const MAX_MESSAGES_PER_SESSION = 200;
+const MAX_CRISIS_AUDIT_ENTRIES = 500;
 
 // ---- Reset event bus ----
 // RootNav needs to re-read onboarded state after clearAll() because its
@@ -198,6 +199,43 @@ function sessionKey(id: string): string {
   return `${SESSION_KEY_PREFIX}${id}`;
 }
 
+// ---- Session index maintenance ----
+// SecureStore has no list API, so we maintain an AsyncStorage index of
+// every per-session key we've ever written. clearAll() reads this index
+// to enumerate and delete every chat session. Without this, "Reset Fernly"
+// would leave encrypted chat history (including crisis-flagged entries)
+// in the device keychain.
+//
+// Centralized here so every write path (createChatSession,
+// setChatSession, appendMessageToSession, addChat, legacy migration)
+// updates the same index. setChatSession is the single funnel — any
+// code that writes a session must go through it.
+async function readSessionIndex(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(ASYNC_KEYS.sessionKeyIndex);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeSessionIndex(list: string[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(ASYNC_KEYS.sessionKeyIndex, JSON.stringify(list));
+  } catch {
+    // best-effort — index is just a hint for clearAll; missing entries
+    // become orphaned in the keychain but are unreachable without the id.
+  }
+}
+
+async function addToSessionIndex(key: string): Promise<void> {
+  const list = await readSessionIndex();
+  if (!list.includes(key)) {
+    list.push(key);
+    await writeSessionIndex(list);
+  }
+}
+
 // ---- Public API ----
 export const storage = {
   // --- Profile (unencrypted AsyncStorage) ---
@@ -272,10 +310,14 @@ export const storage = {
   },
 
   // Write/replace a single chat session. The caller passes the full
-  // session; storage serializes the whole thing.
+  // session; storage serializes the whole thing and records the key
+  // in the reset index. This is the SINGLE funnel for writing chat
+  // sessions — every other write path delegates here so the index
+  // stays in sync.
   async setChatSession(session: ChatSession): Promise<void> {
     const next = { ...session, version: CURRENT_CHAT_VERSION };
     await secureSet(sessionKey(session.id), next);
+    await addToSessionIndex(sessionKey(session.id));
   },
 
   // Append a message to an existing session. In-place: reads the session,
@@ -292,7 +334,10 @@ export const storage = {
       version: CURRENT_CHAT_VERSION,
       messages: [...session.messages, message].slice(-MAX_MESSAGES_PER_SESSION),
     };
-    await secureSet(sessionKey(sessionId), next);
+    // Goes through setChatSession so the index stays in sync. This means
+    // a session created via the legacy addChat path is still reachable
+    // by clearAll() after a subsequent append.
+    await storage.setChatSession(next);
     return next;
   },
 
@@ -306,21 +351,9 @@ export const storage = {
       version: CURRENT_CHAT_VERSION,
       messages: initialMessages.slice(-MAX_MESSAGES_PER_SESSION),
     };
-    await secureSet(sessionKey(id), session);
+    // Goes through setChatSession so the index is updated.
+    await storage.setChatSession(session);
     await storage.setActiveSessionId(id);
-    // Record this session's key in the index so clearAll() can find it.
-    // Best-effort — if this fails the key is still deleted on next clear
-    // because the index is just a hint.
-    try {
-      const raw = await AsyncStorage.getItem(ASYNC_KEYS.sessionKeyIndex);
-      const list: string[] = raw ? JSON.parse(raw) : [];
-      if (!list.includes(sessionKey(id))) {
-        list.push(sessionKey(id));
-        await AsyncStorage.setItem(ASYNC_KEYS.sessionKeyIndex, JSON.stringify(list));
-      }
-    } catch {
-      // ignore — index corruption doesn't block writes
-    }
     return session;
   },
 
@@ -332,9 +365,21 @@ export const storage = {
     const raw = await secureGet<unknown[]>(SECURE_KEYS.chats);
     if (raw && Array.isArray(raw)) {
       const sessions = raw.map(migrateChatSession).filter((s): s is ChatSession => s !== null);
-      // Migrate into per-session keys and clear the legacy blob.
-      await Promise.all(sessions.map((s) => storage.setChatSession(s).catch(() => undefined)));
-      await secureDelete(SECURE_KEYS.chats);
+      // Migrate into per-session keys. setChatSession now also records
+      // each key in the reset index, so the migrated sessions are
+      // reachable by clearAll().
+      //
+      // Two-phase: write per-session keys FIRST, only delete the legacy
+      // blob if all writes succeed. If a write fails, the legacy blob
+      // stays so the migration can be retried (e.g. quota exceeded
+      // recovery) rather than silently losing the user's chat history.
+      const results = await Promise.allSettled(
+        sessions.map((s) => storage.setChatSession(s)),
+      );
+      const allOk = results.every((r) => r.status === 'fulfilled');
+      if (allOk) {
+        await secureDelete(SECURE_KEYS.chats);
+      }
       return sessions;
     }
     // v0.3+: callers should prefer getChatSession(activeId). This list
@@ -346,9 +391,10 @@ export const storage = {
     return [];
   },
 
-  // Legacy single-blob addChat: re-implemented as createChatSession
-  // for backward compatibility with callers that don't yet use the
-  // v0.3 active-session pattern.
+  // Legacy single-blob addChat: re-implemented as setChatSession +
+  // setActiveSessionId for backward compatibility with callers that don't
+  // yet use the v0.3 active-session pattern. setChatSession updates the
+  // reset index, so this path is reachable by clearAll().
   async addChat(s: ChatSession) {
     await storage.setChatSession(s);
     await storage.setActiveSessionId(s.id);
@@ -363,34 +409,62 @@ export const storage = {
   async appendCrisisAudit(entry: CrisisAuditEntry) {
     const all = await storage.getCrisisAudit();
     const next = { ...entry, version: 1 as const };
-    await secureSet(SECURE_KEYS.crisisAudit, [next, ...all]);
+    // FIFO cap at MAX_CRISIS_AUDIT_ENTRIES. A heavy user triggering
+    // soft matches (e.g. "tired of being tired") over months could
+    // otherwise accumulate unlimited audit entries. The audit log
+    // survives clearAll by design, so without a cap storage grows
+    // unbounded across the lifetime of the install.
+    const capped = [next, ...all].slice(0, MAX_CRISIS_AUDIT_ENTRIES);
+    await secureSet(SECURE_KEYS.crisisAudit, capped);
   },
 
   // --- Reset (wipes user-facing data; audit log persists) ---
-  // v0.3: also wipes the active session id and any per-session keys
-  // (best-effort — we don't track an index of session ids, so we can
-  // only wipe the active one plus the legacy blob).
-  // For full wipe of all sessions across history, the ProfileScreen
-  // already calls clearAll() on user request.
+  // v0.7: critical ordering — the session key index in AsyncStorage
+  // MUST be read BEFORE removeMany() is called, otherwise removeMany
+  // wipes the index itself and we can no longer enumerate the per-
+  // session SecureStore keys to delete. Previously, the read happened
+  // AFTER removeMany, so the index was gone, the catch swallowed the
+  // JSON.parse(null) error, and Promise.allSettled([]) deleted nothing.
+  // Result: "Reset Fernly" left encrypted chat history in the keychain
+  // (including any crisis-flagged entries), defeating the privacy
+  // promise.
+  //
+  // Fix: read the index first, then removeMany the rest of AsyncStorage
+  // (including the now-redundant index itself last), then enumerate the
+  // session keys from the saved list.
   async clearAll() {
-    await AsyncStorage.removeMany(Object.values(ASYNC_KEYS));
-    // Best-effort wipe of legacy blob.
-    await secureDelete(SECURE_KEYS.chats);
-    // v0.6: enumerate and delete every per-session SecureStore key.
-    // SecureStore has no list API, so we maintain an index in AsyncStorage
-    // that records each sessionKey() we've created. clearAll() drains it.
-    // Any keys that pre-date the index (e.g. user upgraded from v0.5)
-    // are orphans — they stay in the keychain but become unreachable
-    // because activeSessionId is gone. Acceptable trade-off: the next
-    // session created starts a fresh index.
+    // 1. Snapshot the session key index BEFORE wiping AsyncStorage.
+    const sessionKeys = await readSessionIndex();
+
+    // 2. Wipe AsyncStorage keys EXCEPT the session index, which we still
+    // need for the enumeration below.
+    const keysToRemove = Object.values(ASYNC_KEYS).filter(
+      (k) => k !== ASYNC_KEYS.sessionKeyIndex,
+    );
     try {
-      const raw = await AsyncStorage.getItem(ASYNC_KEYS.sessionKeyIndex);
-      const list: string[] = raw ? JSON.parse(raw) : [];
-      await Promise.allSettled(list.map((k) => SecureStore.deleteItemAsync(k, SECURE_OPTIONS)));
+      await AsyncStorage.removeMany(keysToRemove);
     } catch {
-      // ignore — if the index is corrupt or empty, nothing more to wipe
+      // continue — best-effort wipe
     }
-    //
+
+    // 3. Wipe the legacy single-blob key if it still exists.
+    await secureDelete(SECURE_KEYS.chats);
+
+    // 4. Enumerate and delete every per-session SecureStore key. Use
+    // allSettled so a single failure (e.g. keychain locked mid-reset)
+    // doesn't block the rest.
+    await Promise.allSettled(
+      sessionKeys.map((k) => SecureStore.deleteItemAsync(k, SECURE_OPTIONS)),
+    );
+
+    // 5. Drop the now-drained session key index. (The removeMany above
+    // skipped it; clear it here.)
+    try {
+      await AsyncStorage.removeItem(ASYNC_KEYS.sessionKeyIndex);
+    } catch {
+      // ignore
+    }
+
     // NOTE: SECURE_KEYS.crisisAudit is intentionally NOT deleted here.
     //
     // Notify subscribers (RootNav) that a reset happened so they can
