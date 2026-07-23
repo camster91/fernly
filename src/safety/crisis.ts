@@ -33,12 +33,20 @@ function normalize(input: string): string {
   //    These are common in bypass attempts: "k\u200b i\u200b l\u200b l"
   s = s.replace(/[\u200B-\u200D\uFEFF\u2060]/g, '');
 
-  // 2. v0.9 (F-P1-2): collapse punctuation between single letters.
-  //    Catches "k.m.s." → "kms", "k-m-s" → "kms", "k/m/s" → "kms",
-  //    "s.u.i.c.i.d.e" → "suicide". Pattern is bounded by single
-  //    characters on either side so we don't accidentally strip
-  //    "a.b." at the end of a sentence.
-  s = s.replace(/(\b[a-zA-Z])[.\-/_]+(?=[a-zA-Z])/g, '$1');
+  // 2. v0.9 (F-P1-2): collapse separators between single letters.
+  //    Catches "k.m.s" → "kms", "k-m-s" → "kms", "k/m/s" → "kms",
+  //    "k s" — but also less-obvious separators popular in bypass
+  //    forums: "k∶m∶s" (ratio), "k∙m∙s" (dot operator), "k・m・s"
+  //    (katakana middle dot), "k⬝m⬝s", "k\u200bm\u200bs" (those
+  //    are stripped earlier by ZWJ/ZWSP). Character class kept
+  //    intentionally narrow: just separators between Latin letters.
+  //    The "∙" ∙, "・" ・, and "⬝" ⬝ characters are listed by their
+  //    hex escape so the char-class doesn't get accidentally truncated
+  //    by tooling that handles raw multibyte chars.
+  s = s.replace(
+    /(\b[a-zA-Z])[.\-/,_:|·・•∶⸱⸳⟨⟩⟦⟧⌈⌉⌊⌋∠⦣﹒﹕∶\u2219\u30FB\u2B1D]+(?=[a-zA-Z])/g,
+    '$1',
+  );
 
   // 3. Leetspeak → letter. Subset chosen for the most common
   //    crisis-token swaps. Does NOT touch "h4te" → "hate" because

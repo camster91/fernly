@@ -56,10 +56,17 @@ vi.mock('expo-secure-store', () => ({
 const { detectCrisis, crisisResourcesFor } = await import('../../safety/crisis');
 
 describe('crisis detector: punctuation and abbreviated bypasses (regression)', () => {
-  // Spec: shipped detector must keep matching these. Failures here
-  // indicate a regression in normalize() (ZWJ / spacing / leetspeak
-  // substitution pipeline).
   it.each(['k y s', 'k.m.s.', 'k-m-s', 'k/m/s', 's.u.i.c.i.d.e'])('"%s" must be hard', (input) => {
+    expect(detectCrisis(input).level).toBe('hard');
+  });
+
+  // v0.9 (F-P1-2): Unicode / non-ASCII separator bypasses.
+  // Crisis bypass forums post "k∶m∶s" or "k・m・s" to evade
+  // ASCII-only normalizers. The detector's separator-collapse
+  // step now matches the ratio sign, the dot operator (U+2219),
+  // the katakana middle dot (U+30FB), and triangle colon
+  // (U+2B1D).
+  it.each(['k∶m∶s', 'k・m・s', 'k∙m∙s', 'k⬝m⬝s'])('"%s" must be hard', (input) => {
     expect(detectCrisis(input).level).toBe('hard');
   });
 
