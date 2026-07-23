@@ -157,9 +157,34 @@ export function ProfileScreen({ navigation }: Props) {
       </View>
 
       <View style={styles.statsRow}>
-        <Stat bg={colors.lavender50} value={String(stats.days)} label="ACTIVE DAYS" />
-        <Stat bg={colors.peach50} value={String(stats.moods)} label="MOODS" />
-        <Stat bg={colors.mint50} value={String(profile?.goals?.length ?? 0)} label="GOALS" />
+        {/* v0.9: defer the stats row for new users. A '0 / 0 / 0' row
+            to a brand-new user reads as evaluative before they've done
+            anything. Show a single welcoming CTA instead until they
+            have at least one mood entry. Plans/05 P2-21. */}
+        {stats.moods === 0 ? (
+          <View style={styles.welcomeCard}>
+            <Text style={styles.welcomeTitle}>Welcome 🌱</Text>
+            <Text style={styles.welcomeBody}>
+              Stats appear here after your first mood check-in. The biggest first step is opening a
+              check-in from Today.
+            </Text>
+            <Pressable
+              onPress={() => nav.navigate('MoodCheckIn')}
+              accessibilityRole="button"
+              accessibilityLabel="Open the mood check-in"
+              accessibilityHint="Starts your first mood entry"
+              style={({ pressed }) => [styles.welcomeCta, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={styles.welcomeCtaText}>Check in</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <>
+            <Stat bg={colors.lavender50} value={String(stats.days)} label="ACTIVE DAYS" />
+            <Stat bg={colors.peach50} value={String(stats.moods)} label="MOODS" />
+            <Stat bg={colors.mint50} value={String(profile?.goals?.length ?? 0)} label="GOALS" />
+          </>
+        )}
       </View>
 
       <View style={styles.section}>
@@ -216,6 +241,28 @@ const styles = StyleSheet.create({
 
   statsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: space.s6, marginBottom: space.s6 },
   stat: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: radius.md },
+  welcomeCard: {
+    flex: 1,
+    backgroundColor: colors.lavender50,
+    borderRadius: radius.md,
+    padding: 16,
+    alignItems: 'center',
+  },
+  welcomeTitle: { ...t.bodyBold, color: colors.text, marginBottom: 6 },
+  welcomeBody: {
+    ...t.small,
+    color: colors.textSoft,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  welcomeCta: {
+    backgroundColor: colors.ink,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: radius.full,
+  },
+  welcomeCtaText: { ...t.bodyBold, color: colors.paper, fontSize: 14 },
   statValue: { fontSize: 22, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
   statLabel: { ...t.eyebrow, fontSize: 10, color: colors.textMuted, marginTop: 2 },
 
