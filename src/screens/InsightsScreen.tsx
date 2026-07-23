@@ -7,6 +7,7 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { Card, styles as cardStyles } from '../components/Card';
 import { colors, space, type as t } from '../theme';
 import { storage } from '../storage';
+import { localDateString } from '../util/date';
 import type { MoodEntry } from '../types';
 
 export function InsightsScreen() {
@@ -27,11 +28,15 @@ export function InsightsScreen() {
   // while last7[6] is '2026-07-04'. Day labels use absolute MM/DD
   // (see JSX below) so they don't desync from data points when the
   // window spans two months.
+  //
+  // v0.9: use localDateString() to key the chart on the user's
+  // wall-clock date, not UTC. Otherwise PST users see tomorrow's
+  // mood on today's axis. See plans/05 P1-14.
   const last7: { score: number | null; iso: string }[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const iso = d.toISOString().slice(0, 10);
+    const iso = localDateString(d);
     const found = moods.find((m) => m.date === iso);
     last7.push({ score: found?.score ?? null, iso });
   }
