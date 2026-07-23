@@ -56,18 +56,6 @@ module.exports = [
     },
   },
 
-  // PRACTICE SCREEN EXCLUSION — pre-PR-#4 contains two hex literals at
-  // lines 15-16. PR #4 (chore: asset path fix, dead deps, hex literals
-  // → theme tokens) replaces them with colors.mint700 / colors.yellow700.
-  // This exclusion is removed in PR #13 ("drop pre-existing lint excludes")
-  // after PR #4 lands and CI is fully green.
-  {
-    files: ['src/screens/PracticeScreen.tsx'],
-    rules: {
-      'no-restricted-syntax': 'off',
-    },
-  },
-
   // src/theme.ts is the source of truth for design tokens — hex literals
   // are the literal definition, not a violation.
   {

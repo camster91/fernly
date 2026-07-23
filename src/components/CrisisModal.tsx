@@ -47,8 +47,15 @@ const REACHABILITY_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 const DISMISS_LONGPRESS_MS = 1500;
 
 /** Pick the best locale for crisis resources from the device's preferred
- * locales. The crisis module recognises en-US, en-GB, es, fr, pt, de. */
-function pickLocale(): string {
+ * locales. The crisis module recognises en-US, en-GB, es, fr, pt, de.
+ *
+ * v0.9: cached at module load via `MEMOIZED_PICKED_LOCALE` so every
+ * CrisisModal render doesn't re-call `getLocales()`. On Render the
+ * language detection is a single constant lookup. The `locale` prop
+ * still wins when the caller passes it explicitly (testing, i18n
+ * override).
+ * See plans/05 P1-4 / P1-11. */
+const MEMOIZED_PICKED_LOCALE = (() => {
   try {
     const locales = getLocales();
     for (const l of locales) {
@@ -59,7 +66,8 @@ function pickLocale(): string {
     // expo-localization failed to load — fall through to default
   }
   return 'en-US';
-}
+})();
+const pickLocale = () => MEMOIZED_PICKED_LOCALE;
 
 export function CrisisModal({ visible, locale, matchedPhrase: _matchedPhrase, onDismiss }: Props) {
   // If the caller didn't pass a locale, derive from the device prefs.
