@@ -222,7 +222,12 @@ export function OnboardingScreen({ onDone }: Props) {
 
         {step === 4 && (
           <Step title="How should Fernly talk?" eyebrow="STEP 5 OF 5">
-            <Text style={styles.sub}>Change anytime in settings.</Text>
+            {/* v0.9: "Change anytime in settings" was a lie in v0.8 —
+                settings is forward-compatible (Settings route is reserved
+                in RootStackParamList) but not yet shipped. Real options
+                are: (a) reset Fernly and re-onboard, or (b) wait for v1.
+                See plans/05 P1-20. */}
+            <Text style={styles.sub}>Change anytime by resetting Fernly from your Profile.</Text>
             <View style={{ gap: 10 }}>
               {TONES.map((tn) => (
                 <Pressable

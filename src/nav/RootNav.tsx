@@ -16,6 +16,7 @@ import { ExerciseScreen } from '../screens/ExerciseScreen';
 import { InsightsScreen } from '../screens/InsightsScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
 import { MoodCheckInScreen } from '../screens/MoodCheckInScreen';
 import { colors } from '../theme';
 import { storage, onStorageReset } from '../storage';
@@ -176,6 +177,14 @@ export function RootNav() {
               options={{ presentation: 'modal' }}
             />
             <Stack.Screen name="Exercise" component={ExerciseScreen} />
+            {/* v0.9: real Settings screen — replaces the Alert.alert
+                placeholders that ProfileScreen was triggering for
+                "Export your data" / "Legal & safety" / etc. */}
+            <Stack.Screen
+              name="Settings"
+              component={SettingsScreen}
+              options={{ presentation: 'modal' }}
+            />
           </Stack.Navigator>
         )}
       </NavigationContainer>
