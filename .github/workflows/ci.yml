@@ -78,11 +78,16 @@ jobs:
       - name: Export web bundle
         run: npx expo export --platform web --output-dir dist
 
-      # Surface the bundle size so a 10x regression shows up in the PR
-      # summary instead of as a silent CI slowdown.
-      - name: Report bundle size
+      # Enforce a 2× ceiling over the 912 KiB baseline. This catches large
+      # regressions while leaving room for expected product growth.
+      - name: Enforce and report bundle size
         run: |
-          SIZE=$(du -h dist/_expo/static/js/web/*.js | cut -f1)
-          echo "Web bundle: $SIZE"
-          echo "## Web bundle size" >> $GITHUB_STEP_SUMMARY
-          echo "$SIZE" >> $GITHUB_STEP_SUMMARY
+          SIZE=$(du -ck dist/_expo/static/js/web/*.js | tail -1 | cut -f1)
+          BUDGET_KB=1824
+          echo "Web bundle: ${SIZE} KiB (budget: ${BUDGET_KB} KiB)"
+          echo "## Web bundle size" >> "$GITHUB_STEP_SUMMARY"
+          echo "${SIZE} KiB / ${BUDGET_KB} KiB budget" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$SIZE" -gt "$BUDGET_KB" ]; then
+            echo "Web bundle exceeds the ${BUDGET_KB} KiB budget"
+            exit 1
+          fi
