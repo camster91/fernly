@@ -1,8 +1,9 @@
 // Insights — mood graph + auto-detected patterns
 // v0: reads from AsyncStorage, draws a real SVG line chart of last 7 days.
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
+import { useFocusEffect } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Card, styles as cardStyles } from '../components/Card';
 import { colors, space, type as t } from '../theme';
@@ -13,15 +14,19 @@ import type { MoodEntry } from '../types';
 export function InsightsScreen() {
   const [moods, setMoods] = useState<MoodEntry[]>([]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        setMoods(await storage.getMoods());
-      } catch {
-        setMoods([]);
-      }
-    })();
-  }, []);
+  // v0.9: re-read on every focus so the chart reflects MoodCheckIn
+  // saves done in another tab without an app remount. See plans/05 P1-13.
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        try {
+          setMoods(await storage.getMoods());
+        } catch {
+          setMoods([]);
+        }
+      })();
+    }, []),
+  );
 
   // Build last 7 days (oldest left, today right). The 7-day window
   // crosses month boundaries naturally — last7[0] might be '2026-06-28'

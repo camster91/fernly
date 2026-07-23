@@ -1,8 +1,8 @@
 // Today — the home/landing screen
 // Greeting + streak strip + 2–3 context cards that drive engagement.
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Card, styles as cardStyles } from '../components/Card';
@@ -42,60 +42,68 @@ export function TodayScreen() {
     false,
   ]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const p = await storage.getProfile();
-        setProfile(p);
-        const moods = await storage.getMoods();
-        const today = localDateString();
-        setTodayMood(moods.find((m) => m.date === today) ?? null);
-        // Streak: count consecutive days from today backward. If today
-        // isn't logged yet but yesterday was, count from yesterday so
-        // the user sees "7-day streak" instead of "0" until they log
-        // today — most habit apps treat the day as a grace period.
-        const moodDates = new Set(moods.map((m) => m.date));
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayIso = localDateString(yesterday);
-        // If today is missing but yesterday exists, start counting from
-        // yesterday. The user-facing prompt below communicates "log today
-        // to keep your N-day streak going".
-        //
-        // v0.9: use localDateString() to match the user's wall-clock
-        // date. Streaks broken across timezone midnight boundaries
-        // before this fix. See plans/05 P1-14.
-        const startFromYesterday = !moodDates.has(today) && moodDates.has(yesterdayIso);
-        let count = 0;
-        const d = new Date();
-        if (startFromYesterday) d.setDate(d.getDate() - 1);
-        for (;;) {
-          const iso = localDateString(d);
-          if (moodDates.has(iso)) {
-            count += 1;
-            d.setDate(d.getDate() - 1);
-          } else break;
+  // v0.9: re-read on every focus, not just mount. After MoodCheckIn
+  // saves, returning to Today previously showed the old mood / streak
+  // until app remount. useFocusEffect from react-navigation runs the
+  // effect every time the screen comes into focus — the right pattern
+  // for tab-bar screens that should reflect upstream changes.
+  // See plans/05-full-codebase-review-2026-07-22.md P1-13.
+  useFocusEffect(
+    React.useCallback(() => {
+      (async () => {
+        try {
+          const p = await storage.getProfile();
+          setProfile(p);
+          const moods = await storage.getMoods();
+          const today = localDateString();
+          setTodayMood(moods.find((m) => m.date === today) ?? null);
+          // Streak: count consecutive days from today backward. If today
+          // isn't logged yet but yesterday was, count from yesterday so
+          // the user sees "7-day streak" instead of "0" until they log
+          // today — most habit apps treat the day as a grace period.
+          const moodDates = new Set(moods.map((m) => m.date));
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayIso = localDateString(yesterday);
+          // If today is missing but yesterday exists, start counting from
+          // yesterday. The user-facing prompt below communicates "log today
+          // to keep your N-day streak going".
+          //
+          // v0.9: use localDateString() to match the user's wall-clock
+          // date. Streaks broken across timezone midnight boundaries
+          // before this fix. See plans/05 P1-14.
+          const startFromYesterday = !moodDates.has(today) && moodDates.has(yesterdayIso);
+          let count = 0;
+          const d = new Date();
+          if (startFromYesterday) d.setDate(d.getDate() - 1);
+          for (;;) {
+            const iso = localDateString(d);
+            if (moodDates.has(iso)) {
+              count += 1;
+              d.setDate(d.getDate() - 1);
+            } else break;
+          }
+          setStreak(count);
+          setStreakGrace(startFromYesterday && count > 0);
+          // Week strip: 7 booleans, oldest left, today right. Index 0 is
+          // 6 days ago, index 6 is today. JS getDay(): 0=Sun..6=Sat.
+          // The WEEKDAYS label array is [M,T,W,T,F,S,S]; mapping index 0
+          // of the strip to label "M" requires that "today" sit at index 6
+          // and labels run M..S. We compute it by walking back from today.
+          const strip: boolean[] = [];
+          for (let i = 6; i >= 0; i--) {
+            const day = new Date();
+            day.setDate(day.getDate() - i);
+            strip.push(moodDates.has(localDateString(day)));
+          }
+          setWeekLog(strip);
+        } catch {
+          // Storage layer failed (native module not linked, etc.).
+          // Render the screen with empty state rather than crashing.
         }
-        setStreak(count);
-        setStreakGrace(startFromYesterday && count > 0);
-        // Week strip: 7 booleans, oldest left, today right. Index 0 is
-        // 6 days ago, index 6 is today. JS getDay(): 0=Sun..6=Sat.
-        // The WEEKDAYS label array is [M,T,W,T,F,S,S]; mapping index 0
-        // of the strip to label "M" requires that "today" sit at index 6
-        // and labels run M..S. We compute it by walking back from today.
-        const strip: boolean[] = [];
-        for (let i = 6; i >= 0; i--) {
-          const day = new Date();
-          day.setDate(day.getDate() - i);
-          strip.push(moodDates.has(localDateString(day)));
-        }
-        setWeekLog(strip);
-      } catch {
-        // Storage layer failed (native module not linked, etc.).
-        // Render the screen with empty state rather than crashing.
-      }
-    })();
-  }, []);
+      })();
+    }, []),
+  );
 
   const hour = new Date().getHours();
   const name = profile?.name || 'there';
