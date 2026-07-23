@@ -8,10 +8,10 @@ Because we process crisis-flagged text, **security reports get routed straight t
 
 ## Supported versions
 
-| Version | Supported |
-|---|---|
+| Version          | Supported                |
+| ---------------- | ------------------------ |
 | Latest on `main` | ✅ Active security fixes |
-| Older releases | ❌ No backports |
+| Older releases   | ❌ No backports          |
 
 This is a v0 alpha. We ship weekly; every release on `main` is the supported version. Older builds were never in anyone's hands and don't deserve backports.
 
@@ -22,6 +22,7 @@ This is a v0 alpha. We ship weekly; every release on `main` is the supported ver
 (Reach the owner directly if the alias fails — see Commit history in git log.)
 
 **Please include:**
+
 - A clear, reproducible description of the issue
 - Steps to reproduce or a PoC exploit
 - The platform (iOS / Android / web / all) where you observed it
@@ -31,6 +32,7 @@ This is a v0 alpha. We ship weekly; every release on `main` is the supported ver
 **Don't post security issues to GitHub Issues.** Issues are public; vulnerability details should never be.
 
 **Expected response time:**
+
 - 24-hour acknowledgement
 - 72-hour initial triage
 - Severity + fix ETA at triage; usually a fix within 7 days for critical
@@ -38,7 +40,7 @@ This is a v0 alpha. We ship weekly; every release on `main` is the supported ver
 ## What counts as a critical issue
 
 - CrisisModal triggering on benign text (false positives)
-- CrisisModal *not* triggering on real ideation (false negatives)
+- CrisisModal _not_ triggering on real ideation (false negatives)
 - Crisis-pattern audit log persistence or access
 - Any path that lets an attacker read or write another user's data
 - Authentication, authorization, or session-handling flaws

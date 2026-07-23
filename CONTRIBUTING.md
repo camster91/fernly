@@ -38,6 +38,7 @@ Node 20 (`.nvmrc`) and npm 10+. Both are pinned in `package.json:engines`.
    - `chore/<short-name>` for tooling, deps, docs
 
 2. Make your change. Run the gates:
+
    ```bash
    npm run typecheck    # tsc --noEmit
    npm run lint         # eslint
@@ -46,6 +47,7 @@ Node 20 (`.nvmrc`) and npm 10+. Both are pinned in `package.json:engines`.
    ```
 
 3. Verify the web export builds:
+
    ```bash
    npx expo export --platform web
    ```
