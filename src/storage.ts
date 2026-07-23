@@ -76,6 +76,12 @@ const ASYNC_KEYS = {
   // by clearAll() to enumerate and delete every per-session key, since
   // SecureStore has no list API.
   sessionKeyIndex: '@fernly/session-key-index',
+  // v0.8 (F-P1-10): per-URL lastVerifiedAt (ms epoch) for crisis resources.
+  // Seeded by `safety/crisis.ts` after a successful HEAD check; consumed at
+  // app startup to short-circuit the "~3s unavailable banner" flash on cold
+  // launch. Entries older than 6h are dropped on read; persistence is
+  // best-effort (same swallow-on-error policy as the rest of AsyncStorage).
+  verifiedUrls: '@fernly/verified-urls',
 } as const;
 
 // ---- SecureStore keys (encrypted, device-bound) ----
@@ -309,6 +315,23 @@ export const storage = {
     } else {
       await asyncSetString(ASYNC_KEYS.activeSessionId, id);
     }
+  },
+
+  // --- Verified crisis-resource URLs (unencrypted AsyncStorage) ---
+  // v0.8 (F-P1-10): { url: lastVerifiedAt (ms epoch) }. Loaded at app
+  // startup by `safety/crisis.ts`; entries <6h old are treated as fresh
+  // and skipped during the post-launch re-check so the CrisisModal banner
+  // doesn't flash "resources may be unavailable" for ~3s on every cold
+  // launch.
+  //
+  // Returns {} on parse failure or missing key — callers treat the empty
+  // shape as "nothing is fresh" and proceed with a full re-check.
+  async getVerifiedUrls(): Promise<Record<string, number>> {
+    return (await asyncGet<Record<string, number>>(ASYNC_KEYS.verifiedUrls)) ?? {};
+  },
+
+  async setVerifiedUrls(map: Record<string, number>) {
+    await asyncSet(ASYNC_KEYS.verifiedUrls, map);
   },
 
   // --- Chat history: per-session keys (ENCRYPTED SecureStore) ---

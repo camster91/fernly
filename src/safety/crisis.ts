@@ -14,6 +14,8 @@
 // wins unconditionally. This is the one place in the codebase where we MUST
 // not let the AI have a say.
 
+import { storage } from '../storage';
+
 export type CrisisLevel = 'none' | 'soft' | 'hard';
 
 interface CrisisVerdict {
@@ -202,10 +204,48 @@ export interface CrisisResource {
 // Cache of resource URLs that have been verified reachable at app start.
 // Populated by `verifyResourceReachability()`; consumed by CrisisModal to
 // decide whether to show a "resources may be unavailable" banner.
+//
+// v0.8 (F-P1-10): backed by AsyncStorage so entries survive cold launches.
+// `hydrateVerifiedUrls()` must be called once at app startup before
+// `verifyResourceReachability()` runs; without it, the in-memory map
+// starts empty and the modal shows the "unreachable" banner until the
+// post-launch HEAD check completes (~3s). Stale entries (>6h) are
+// dropped on hydrate so they don't suppress a real fresh failure.
 const verifiedUrls = new Map<string, number>(); // url → lastVerifiedAt (ms)
+const VERIFIED_URL_TTL_MS = 6 * 60 * 60 * 1000; // 6h
 
 export function lastVerifiedAt(url: string): number | null {
   return verifiedUrls.get(url) ?? null;
+}
+
+/**
+ * v0.8 (F-P1-10): load the persisted verifiedUrls map from AsyncStorage
+ * and seed the in-memory cache. Entries with `verifiedAt < (now - 6h)`
+ * are dropped so a stale "fresh" entry can't suppress a real fresh
+ * failure on next launch. Should be called once at app startup, before
+ * the post-launch `verifyResourceReachability()` re-check fires.
+ *
+ * Best-effort: missing key or parse failure is a no-op (in-memory map
+ * stays empty and the re-check proceeds as before).
+ */
+export async function hydrateVerifiedUrls(): Promise<void> {
+  try {
+    const persisted = await storage.getVerifiedUrls();
+    const now = Date.now();
+    let loaded = 0;
+    for (const [url, at] of Object.entries(persisted)) {
+      if (typeof at !== 'number' || !Number.isFinite(at)) continue;
+      if (now - at >= VERIFIED_URL_TTL_MS) continue;
+      verifiedUrls.set(url, at);
+      loaded++;
+    }
+    if (loaded > 0) {
+      console.log(`[crisis] hydrated ${loaded} verified url(s) from disk`);
+    }
+  } catch {
+    // Storage layer swallows its own errors; this catch is belt-and-suspenders
+    // for the in-memory set. Either way, fall through with the empty map.
+  }
 }
 
 /**
@@ -213,6 +253,11 @@ export function lastVerifiedAt(url: string): number | null {
  * the cache stays empty and the CrisisModal banner logic handles the rest.
  *
  * v0.2: called from `App.tsx` mount. Best-effort, never blocks UI.
+ * v0.8 (F-P1-10): on a successful HEAD check, persist `{ url: verifiedAt }`
+ * to AsyncStorage so the next cold launch can skip the re-check for fresh
+ * entries (<6h). Persistence is fire-and-forget — a write failure does
+ * not invalidate the in-memory update, which keeps the current session
+ * responsive.
  */
 export async function verifyResourceReachability(
   urls: string[],
@@ -224,7 +269,15 @@ export async function verifyResourceReachability(
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
         const res = await fetch(url, { method: 'HEAD', signal: controller.signal });
-        if (res.ok) verifiedUrls.set(url, Date.now());
+        if (res.ok) {
+          const now = Date.now();
+          verifiedUrls.set(url, now);
+          // Persist asynchronously — don't await on the hot path so a slow
+          // AsyncStorage write can't stretch the post-launch banner window.
+          storage
+            .setVerifiedUrls(Object.fromEntries(verifiedUrls))
+            .catch(() => undefined);
+        }
       } catch {
         // silent — unreachable URL just stays out of the cache
       } finally {
