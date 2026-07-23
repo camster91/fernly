@@ -321,7 +321,7 @@ export function CrisisModal({ visible, locale, matchedPhrase: _matchedPhrase, on
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(42, 36, 56, 0.85)',
+    backgroundColor: colors.scrim,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
