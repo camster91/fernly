@@ -25,13 +25,13 @@ interface State {
 }
 
 export class ErrorBoundary extends React.Component<Props, State> {
-  state: State = { hasError: false, error: null };
+  override state: State = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, info: React.ErrorInfo) {
+  override componentDidCatch(error: Error, info: React.ErrorInfo) {
     // v0.8: console.error surfaces the failure to the dev overlay AND
     // is captured by Expo's dev-mode crash handler. When Sentry ships
     // (DevOps C3), replace this with Sentry.captureException.
@@ -42,7 +42,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
     this.setState({ hasError: false, error: null });
   };
 
-  render() {
+  override render() {
     if (!this.state.hasError) return this.props.children;
 
     return (
