@@ -65,6 +65,13 @@ export const colors = {
   // primary button background; warn stays for accents/decoration.
   warnDeep: '#C92A4A',
   success: '#8FDDB4',
+  // v0.8 (F-P2-2): scrim is a dark, semi-transparent overlay used behind
+  // modals (CrisisModal's backdrop). Defined here so the dim layer routes
+  // through the theme contract instead of inlining rgba in component
+  // styles. RGB matches `ink` (#2A2438) at 85% alpha — chosen for the
+  // same dark-on-pastel calm that the CrisisModal needs to signal
+  // "stop and read this".
+  scrim: 'rgba(42, 36, 56, 0.85)',
 } as const;
 
 export const space = {
