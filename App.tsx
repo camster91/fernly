@@ -16,7 +16,7 @@ import { Dimensions, Platform, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { RootNav } from './src/nav/RootNav';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
-import { verifyResourceReachability } from './src/safety/crisis';
+import { hydrateVerifiedUrls, verifyResourceReachability } from './src/safety/crisis';
 import { colors } from './src/theme';
 
 // All URLs we currently surface as crisis resources. Pre-flight HEAD-checks
@@ -35,9 +35,15 @@ const WEB_PHONE_WIDTH = 414;
 
 export default function App() {
   useEffect(() => {
-    // Best-effort — silently no-ops on failure. The cache in crisis.ts is
-    // only populated for URLs that respond OK within the timeout.
-    verifyResourceReachability(CRISIS_RESOURCE_URLS).catch(() => undefined);
+    // v0.8 (F-P1-10): hydrate the verifiedUrls cache from AsyncStorage
+    // before firing the HEAD check so URLs verified <6h ago don't flash
+    // the "unreachable" banner on cold launch. Best-effort, never blocks
+    // UI — failures silently fall through to an empty in-memory map.
+    hydrateVerifiedUrls()
+      .catch(() => undefined)
+      .finally(() => {
+        verifyResourceReachability(CRISIS_RESOURCE_URLS).catch(() => undefined);
+      });
   }, []);
 
   const content = (
