@@ -9,6 +9,7 @@ import { Card, styles as cardStyles } from '../components/Card';
 import { moodLabel } from '../components/MoodPicker';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
+import { localDateString } from '../util/date';
 import type { UserProfile, MoodEntry } from '../types';
 import type { RootStackParamList } from '../nav/RootNav';
 
@@ -47,7 +48,7 @@ export function TodayScreen() {
         const p = await storage.getProfile();
         setProfile(p);
         const moods = await storage.getMoods();
-        const today = new Date().toISOString().slice(0, 10);
+        const today = localDateString();
         setTodayMood(moods.find((m) => m.date === today) ?? null);
         // Streak: count consecutive days from today backward. If today
         // isn't logged yet but yesterday was, count from yesterday so
@@ -56,16 +57,20 @@ export function TodayScreen() {
         const moodDates = new Set(moods.map((m) => m.date));
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayIso = yesterday.toISOString().slice(0, 10);
+        const yesterdayIso = localDateString(yesterday);
         // If today is missing but yesterday exists, start counting from
         // yesterday. The user-facing prompt below communicates "log today
         // to keep your N-day streak going".
+        //
+        // v0.9: use localDateString() to match the user's wall-clock
+        // date. Streaks broken across timezone midnight boundaries
+        // before this fix. See plans/05 P1-14.
         const startFromYesterday = !moodDates.has(today) && moodDates.has(yesterdayIso);
         let count = 0;
         const d = new Date();
         if (startFromYesterday) d.setDate(d.getDate() - 1);
         for (;;) {
-          const iso = d.toISOString().slice(0, 10);
+          const iso = localDateString(d);
           if (moodDates.has(iso)) {
             count += 1;
             d.setDate(d.getDate() - 1);
@@ -82,7 +87,7 @@ export function TodayScreen() {
         for (let i = 6; i >= 0; i--) {
           const day = new Date();
           day.setDate(day.getDate() - i);
-          strip.push(moodDates.has(day.toISOString().slice(0, 10)));
+          strip.push(moodDates.has(localDateString(day)));
         }
         setWeekLog(strip);
       } catch {
@@ -128,6 +133,10 @@ export function TodayScreen() {
           // color-blind users (8% of males) get the only signal they
           // can use. Unlogged dots are outlined (border-only, no fill)
           // so the SHAPE differs too, not just the color.
+          //
+          // v0.9: use localDateString() instead of toISOString().slice().
+          // The UTC slicing bug returned wrong-day strings for users east
+          // or west of UTC, corrupting streak math and chart axes.
           const date = new Date();
           date.setDate(date.getDate() - (6 - i));
           const dow = date.getDay(); // 0=Sun..6=Sat

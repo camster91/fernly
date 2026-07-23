@@ -8,6 +8,7 @@ import { MoodPicker, moodLabel } from '../components/MoodPicker';
 import { Card } from '../components/Card';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
+import { localDateString } from '../util/date';
 import type { MoodScore, MoodEntry } from '../types';
 import { greetingForHour } from './TodayScreen';
 
@@ -29,8 +30,11 @@ export function MoodCheckInScreen() {
 
   async function save() {
     if (!score) return;
+    // v0.9: store the user's local-date string, not UTC. A PST user
+    // saving at 11pm local would otherwise file under tomorrow's date
+    // and break streak math / chart alignment. See plans/05 P1-14.
     const entry: MoodEntry = {
-      date: new Date().toISOString().slice(0, 10),
+      date: localDateString(),
       score,
       word,
     };
