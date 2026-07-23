@@ -95,6 +95,19 @@ export const radius = {
 } as const;
 
 // Typography — use system fonts as fallbacks for body, Inter via @expo-google-fonts later
+// Font tokens. v0.9 keeps the prior System-default family stack on
+// purpose — Inter / Nunito / DM Mono ship in v1+ per plans/05 F-P2-9.
+//
+// Why not ship the spec fonts today: loading @expo-google-fonts +
+// the bundled Inter/Nunito ttf files is a +~80KB web-bundle hit
+// plus an asset-download-on-cold-start on iOS/Android. With no
+// real-device visual review possible in this arc, that bundle
+// cost lands without verification.
+//
+// When the v1 fonts ship, this is the only place the change must
+// land (one-line swap of `'System'` for `'Inter' as string`) and
+// the screens automatically match spec/index.html because they
+// read tokens here.
 export const font = {
   display: 'System',
   body: 'System',
