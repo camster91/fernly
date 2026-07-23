@@ -1,0 +1,74 @@
+# CODEOWNERS — Fernly single-owner repo
+#
+# This file is documentation for what is safety-critical and what is
+# routine. With a single-owner repo there's nothing to auto-assign, but
+# the pattern still helps when the project gets a second collaborator
+# or when an AI agent is involved.
+#
+# Naming: GitHub resolves the first match that wins, so list highest-
+# priority paths first.
+#
+# Owner:    @camster91
+# Patterns below reference the path prefix only — add explicit
+# `@user` annotations when collaborators join.
+
+# — Safety-critical surface. ANY change here must be reviewed by the
+#   owner (NOT an autonomous agent) before merge. Changes here affect
+#   what users see during a crisis moment. —
+
+/src/safety/                                  @camster91
+/src/components/CrisisModal.tsx               @camster91
+/src/safety/crisis.ts                         @camster91
+/src/storage.ts                               @camster91
+/src/util/date.ts                             @camster91
+
+# — Plan docs. Edit history of the audit/kanban governs what the
+#   next round of code-reviewer work will be. Touch with care. —
+
+/plans/                                       @camster91
+
+# — Onboarding copy. First-touch surface. New-user wording decisions
+#   stay with the owner. —
+
+/src/screens/OnboardingScreen.tsx             @camster91
+/src/screens/SettingsScreen.tsx               @camster91
+
+# — Crisis detector patterns and the test corpus that pins them.
+#   These patterns are clinical-UX decisions, not engineering ones. —
+
+/scripts/test-crisis.mjs                       @camster91
+/scripts/test-crisis-edge-cases.mjs            @camster91
+/src/safety/crisis.ts                          @camster91
+
+# — Default ownership for everything else lives below this line —
+#   collaborators can claim ownership by PR. —
+
+# CLI / docs:
+/.claude/                                      @camster91
+/AGENTS.md                                     @camster91
+/README.md                                     @camster91
+/CODEOWNERS                                    @camster91
+
+# — Workflow / build pipeline: changes here affect every PR. —
+
+/.github/workflows/                            @camster91
+/.github/dependabot.yml                        @camster91
+/eslint.config.js                              @camster91
+/tsconfig.json                                 @camster91
+/vitest.config.ts                              @camster91
+/app.json                                      @camster91
+/package.json                                  @camster91
+
+# — Screens where copy decisions live with the owner, but
+#   single-line code changes don't need review. —
+
+/src/screens/ChatScreen.tsx                    @camster91
+/src/screens/TodayScreen.tsx                   @camster91
+/src/screens/MoodCheckInScreen.tsx             @camster91
+/src/screens/PracticeScreen.tsx                @camster91
+/src/screens/ExerciseScreen.tsx                @camster91
+/src/screens/InsightsScreen.tsx                @camster91
+/src/screens/ProfileScreen.tsx                 @camster91
+
+# Catch-all for everything else (single line is required):
+*                                              @camster91
