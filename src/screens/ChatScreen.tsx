@@ -14,6 +14,7 @@
 // AbortController + useRef re-enter.
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   ListRenderItem,
@@ -151,6 +152,12 @@ export function ChatScreen() {
     if (!text) return;
     isSendingRef.current = true;
     setIsSending(true); // also drives the UI disabled state
+    // v0.9: keep the original text as a draft. If any persistence
+    // step throws, restore the draft so the user can retry instead
+    // of seeing their message vanish. For a wellness app where the
+    // content may be emotionally important, silent text loss is the
+    // worst possible failure mode. See plans/05 P1-11.
+    const draft = input;
     setInput('');
 
     try {
@@ -234,6 +241,21 @@ export function ChatScreen() {
       if (afterUser) setMessages(afterUser.messages);
       const afterReply = await storage.appendMessageToSession(sessionId, replyMsg);
       if (afterReply) setMessages(afterReply.messages);
+    } catch (err) {
+      // v0.9: restore the draft so the user can retry, and surface
+      // the failure via Alert instead of silently swallowing. The
+      // previous behavior cleared `input` upfront on line 154 and
+      // let any error propagate uncaught. See plans/05 P1-11.
+      console.warn('[ChatScreen] send failed:', err);
+      setInput(draft);
+      // Alert.alert is safe to use here — RN's Alert always renders on
+      // both platforms; even if a render error boundary catches the
+      // throw above, the input draft restoration guarantees no data
+      // loss before the user sees the failure.
+      Alert.alert(
+        'Could not send your message',
+        'Your text is still in the input — try again, and if it keeps failing, restart the app.',
+      );
     } finally {
       isSendingRef.current = false;
       setIsSending(false);
