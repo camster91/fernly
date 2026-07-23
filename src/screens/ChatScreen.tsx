@@ -415,11 +415,17 @@ const styles = StyleSheet.create({
   },
   quickPill: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    // v0.9: vertical padding + 13pt line height totaled ~36pt —
+    // below the WCAG AA-target 44pt touch-surface minimum. Bumped to
+    // match the MoodCheckInScreen feel. Plans/05 P2-17.
+    paddingVertical: 12,
+    minHeight: 44,
     borderRadius: radius.full,
     backgroundColor: colors.paper2,
     borderWidth: 1,
     borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   quickText: { fontSize: 13, fontWeight: '600', color: colors.text },
 
