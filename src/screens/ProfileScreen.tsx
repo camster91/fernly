@@ -1,5 +1,4 @@
 // Profile / You screen
-// Avatar (mascot emoji), stats row, settings entries.
 import React, { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -8,6 +7,12 @@ import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import { MASCOT_EMOJI } from '../data/mascots';
 import type { UserProfile } from '../types';
+import type { RootStackParamList } from '../nav/RootNav';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+
+type Props = {
+  navigation: NativeStackNavigationProp<RootStackParamList>;
+};
 
 const TONE_LABEL: Record<string, string> = {
   soft: '🕊 Soft',
@@ -15,7 +20,8 @@ const TONE_LABEL: Record<string, string> = {
   playful: '✨ Playful',
 };
 
-export function ProfileScreen() {
+export function ProfileScreen({ navigation }: Props) {
+  const nav = navigation;
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState({ moods: 0, chats: 0, days: 0 });
 
@@ -96,22 +102,6 @@ export function ProfileScreen() {
     );
   }
 
-  async function exportData() {
-    const moods = await storage.getMoods();
-    await storage.getChats(); // migrate legacy if present
-    const activeId = await storage.getActiveSessionId();
-    const active = activeId ? await storage.getChatSession(activeId) : null;
-    const chatCount = active?.messages.length ?? 0;
-    // v0.5: JSON export is a future-update feature; today the alert
-    // surfaces what's on-device so the user understands the volume
-    // before the real export ships. (Same Alert.alert pattern as
-    // showLegal — placeholder until SettingsScreen ships.)
-    Alert.alert(
-      'Export data',
-      `You have ${moods.length} mood entries and ${chatCount} messages in your current chat. JSON export ships in a future update.`,
-    );
-  }
-
   async function reset() {
     // v0.8: disclose the audit log retention in the confirm. The audit
     // log (last 500 entries, schema-versioned, encrypted in SecureStore)
@@ -153,18 +143,6 @@ export function ProfileScreen() {
     );
   }
 
-  function showLegal() {
-    // v0.8: be honest about what 'Reset' actually clears. The crisis
-    // pattern audit log (last 500 entries) is intentionally retained
-    // — it's used for incident response and is NOT considered user
-    // content. Saying "clears all your data" while keeping it is a
-    // material privacy/trust mismatch.
-    Alert.alert(
-      'Fernly — legal & safety',
-      'Fernly is not therapy. If you are in crisis, contact 988 (US) or 116 123 (UK).\n\nFull Disclaimer, Privacy Policy, and EULA ship in a future update. Open-source decision is on the roadmap.\n\nNote: your local chat history, mood entries, and profile are deleted by Reset. The crisis-pattern audit log (last 500 entries) is retained for safety review and is not user-editable.',
-    );
-  }
-
   return (
     <ScreenContainer>
       <View style={styles.header}>
@@ -192,8 +170,14 @@ export function ProfileScreen() {
           'Your goals',
           profile?.goals?.length ? `${profile.goals.length} chosen` : 'Not set',
         )}
-        {row('📥', 'Export your data', 'Tap to export your data as JSON', exportData)}
-        {row('⚖️', 'Legal & safety', 'Tap to read disclaimer, privacy, and EULA', showLegal)}
+        {/* Actionable rows. v0.9: Export + Legal now navigate to the
+            real Settings screen instead of opening Alert.alerts.
+            Reset stays here because it's destructive and benefits
+            from the Profile context (the mascot emoji is right
+            above it). See plans/05 P1-20. */}
+        {row('📥', 'Open Settings', 'Edit mascot, tone, goals. Export your data. Legal info.', () =>
+          nav.navigate('Settings'),
+        )}
         {row('🗑', 'Reset Fernly', 'Tap to clear all your data', reset, true)}
       </View>
     </ScreenContainer>
