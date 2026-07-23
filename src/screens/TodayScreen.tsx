@@ -112,17 +112,35 @@ export function TodayScreen() {
   return (
     <ScreenContainer>
       <View style={styles.greeting}>
+        {/* Eyebrow: time-of-day + streak framing. New users (streak
+            === 0) used to see "0-DAY STREAK" which framed them as
+            failing. v0.9 shows the onboarding mood pick on first
+            launch instead of an empty streak.
+            See plans/05 P2-2 + P1-15. */}
         <Text style={styles.eyebrow}>
-          {greetingForHour(hour).toUpperCase()} · {streak}-DAY STREAK
-          {streakGrace ? ' · LOG TODAY TO KEEP IT' : ''}
+          {streak > 0
+            ? `${greetingForHour(hour)} · ${streak}-DAY STREAK${
+                streakGrace ? ' · LOG TODAY TO KEEP IT' : ''
+              }`
+            : profile?.initialMood
+              ? `${greetingForHour(hour)} · STARTED ${moodLabel(profile.initialMood).toUpperCase()}`
+              : `${greetingForHour(hour)}`}
         </Text>
-        <Text style={styles.hi}>Hey {firstName} 👋</Text>
+        {/* v0.9: "Hey afternoon" was awkward in caps; produce a
+            natural "Good afternoon." sentence instead. Both pieces
+            of the greeting now flow together grammatically.
+            See plans/05 P2-3. */}
+        <Text style={styles.hi}>
+          Good {greetingForHour(hour).toLowerCase()}, {firstName}.
+        </Text>
         <Text style={styles.prompt}>
           {todayMood
             ? `Today's already logged as ${moodLabel(todayMood.score)} (${todayMood.score}/6). Anything else land?`
             : streakGrace
               ? `Log today to keep your ${streak}-day streak going.`
-              : 'How are you waking up today?'}
+              : profile?.initialMood
+                ? `You said you were feeling ${moodLabel(profile.initialMood)} when you signed up. How does today compare?`
+                : 'How are you waking up today?'}
         </Text>
       </View>
 

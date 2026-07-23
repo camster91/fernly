@@ -10,9 +10,21 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { ScreenContainer } from '../components/ScreenContainer';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
-import type { Goal, Mascot, Tone, UserProfile } from '../types';
+import type { Goal, Mascot, MoodScore, Tone, UserProfile } from '../types';
 
-const MOOD_CHOICES = ['Anxious', 'Numb', 'Tired', 'Hopeful', 'Overwhelmed', 'Okay', 'Lonely'];
+// v0.9: changed `MOOD_CHOICES` from string[] to { label: MoodScore, text }
+// so the onboarding pick is persisted as a real score (1-6), not a free-
+// text string nobody reads. TodayScreen can greet the user with their
+// starting mood on first launch. See plans/05 P1-15.
+const MOOD_CHOICES: { label: MoodScore; text: string }[] = [
+  { label: 2, text: 'Anxious' },
+  { label: 1, text: 'Numb' },
+  { label: 2, text: 'Tired' },
+  { label: 5, text: 'Hopeful' },
+  { label: 2, text: 'Overwhelmed' },
+  { label: 4, text: 'Okay' },
+  { label: 2, text: 'Lonely' },
+];
 const GOALS: { id: Goal; label: string }[] = [
   { id: 'sleep', label: '💤 Sleep better' },
   { id: 'quiet_thoughts', label: '🧠 Quiet my thoughts' },
@@ -56,7 +68,10 @@ interface Props {
 export function OnboardingScreen({ onDone }: Props) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
-  const [mood, setMood] = useState<string | null>(null);
+  // v0.9: MoodScore (1-6) instead of free-text string. Previously the
+  // picked mood was discarded — kept as a 'string | null' with no
+  // receiver. Now it persists as initialMood on the profile. See P1-15.
+  const [mood, setMood] = useState<MoodScore | null>(null);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [mascot, setMascot] = useState<Mascot>('moon');
   const [tone, setTone] = useState<Tone>('soft');
@@ -88,6 +103,10 @@ export function OnboardingScreen({ onDone }: Props) {
       goals,
       onboarded: true,
       createdAt: new Date().toISOString(),
+      // v0.9: persist the onboarding mood pick so it can be surfaced
+      // on the Today greeting instead of being collected and discarded.
+      // See plans/05 P1-15.
+      initialMood: mood ?? undefined,
     };
     await storage.setProfile(profile);
     onDone();
@@ -141,15 +160,17 @@ export function OnboardingScreen({ onDone }: Props) {
             <View style={styles.pillRow}>
               {MOOD_CHOICES.map((m) => (
                 <Pressable
-                  key={m}
-                  onPress={() => setMood(m)}
+                  key={m.text}
+                  onPress={() => setMood(m.label)}
                   accessibilityRole="button"
-                  accessibilityLabel={m}
-                  accessibilityState={{ selected: mood === m }}
+                  accessibilityLabel={m.text}
+                  accessibilityState={{ selected: mood === m.label }}
                   hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  style={[styles.pill, mood === m && styles.pillActive]}
+                  style={[styles.pill, mood === m.label && styles.pillActive]}
                 >
-                  <Text style={[styles.pillText, mood === m && styles.pillTextActive]}>{m}</Text>
+                  <Text style={[styles.pillText, mood === m.label && styles.pillTextActive]}>
+                    {m.text}
+                  </Text>
                 </Pressable>
               ))}
             </View>
