@@ -86,6 +86,36 @@ during the UX review cycle and during the codebase-improvement arc.
 
 ---
 
+### 🎉 Done (v0.9 milestone commit chain)
+
+| ID | Title | Plan ref | Commit |
+|---|---|---|---|
+| F-P1-3 | `npm audit` step in CI | plans/05 C1 | `a519205` |
+| F-P1-4 | Web bundle size budget (1.5x baseline) | plans/05 C2 | `7902323` |
+| F-P1-5 | engines field + .nvmrc (Node 20) | plans/05 P2-5 | `7761789` |
+| F-P1-6 | TypeScript strict flags (safe subset) | plans/05 P1-18 | `0f2b6c6` |
+| F-P1-7 | PracticeScreen availability legend | plans/05 P2-18 | `f77ae07` |
+| F-P1-10 | verifiedUrls persistence (F-P1-6) | plans/05 P1-6 | `d88ed76` |
+| F-P1-11 | Memoize pickLocale() | plans/05 P1-4 | `5a0639a` |
+| F-P1-12 | Cleanup stale eslint disable | plans/05 P1-16 | `89cb430` |
+| F-P2-1 | Insights Y-axis gridlines + legend | plans/05 P2-19 | `d262d49` |
+| F-P2-2 | colors.scrim token | plans/05 P2-1 | `48414b0` |
+| F-P2-3 | First-run stats → welcome CTA | plans/05 P2-21 | `21b64ff` (was dropped by a botched merge resolution — restored in `7fbc837`) |
+| F-P2-4 | Loading screen + a11y progressbar | plans/05 P2-22 | `96a1d28` |
+| F-P2-5 | Quick-pill 44pt touch targets | plans/05 P2-17 | `26d9156` |
+| F-P2-6 | SECURITY.md / CONTRIBUTING.md / CODE_OF_CONDUCT.md | plans/05 P2-8 | `93655e6` |
+| F-P2-7 | CODEOWNERS for safety-critical files | plans/05 P2-9 | `262f90c` |
+| F-P2-11 | Empty Insights CTA | plans/05 P2-20 | `d262d49` |
+| F-P0-2 | Sentry ErrorBoundary forward (optional dep) | plans/05 P0-2 / DevOps C3 | `336bad1` |
+| F-P1-1 | ChatScreen inverted FlatList → scrollToEnd + Jump pill | plans/05 P1-12 | `dd05919` |
+| F-P1-8 | ChatScreen error UX visual confirmation (closed in code review) | plans/05 P1-11 | `8dfa989` |
+| F-P1-9 | SecureStore web parity documented in README | plans/05 P1-9 | `ef23031` |
+
+20 done. 1 in progress (F-P0-1, awaiting user approval for the remote side).
+Up from 14 local commits to 108 — the codebase-improvement arc is roughly 13-14 PRs into the forward arc.
+
+---
+
 ## Wave plan (suggested)
 
 **Wave 1 (4-6h) — unblock CI + ship-readiness:**
