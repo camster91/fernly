@@ -83,6 +83,15 @@ Crisis detection runs on every user message before the LLM. If a hard pattern ma
 
 The plan still flags a **clinical advisor** as the highest-risk deferred decision. Crisis detection is a real safety net but not a substitute for a licensed psychologist reviewing prompts.
 
+## Privacy & storage partition
+
+Fernly splits local data between two stores depending on sensitivity:
+
+- **AsyncStorage (unencrypted, OS-level):** profile, mood entries, onboarding complete flag, exercise sessions, active-chat-session UUID. These are useful across app reinstalls and don't carry crisis-flagged text.
+- **`expo-secure-store` (encrypted, device-unlock-gated):** chat history messages (which can include "kms" / "I want to die" / etc.). On iOS this is the Keychain; on Android it's the Keystore. The crisis-pattern audit log also lives here and intentionally survives Profile → Reset.
+
+**Web partition:** `expo-secure-store` on web falls back to `localStorage` with no OS-level encryption. The chat history is therefore plaintext on a web deploy — anyone with devtools access to that browser can read it. This is inherent to the browser sandbox; web is appropriate for self-hosted / preview deploys, not for storing private health data on a shared device. Mobile (iOS/Android) is the recommended surface for production use.
+
 ---
 
 ## Repo conventions
