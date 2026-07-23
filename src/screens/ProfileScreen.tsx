@@ -1,7 +1,8 @@
 // Profile / You screen
 // Avatar (mascot emoji), stats row, settings entries.
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
@@ -18,25 +19,31 @@ export function ProfileScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState({ moods: 0, chats: 0, days: 0 });
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const p = await storage.getProfile();
-        setProfile(p);
-        const moods = await storage.getMoods();
-        const chats = await storage.getChats();
-        // "DAYS" used to mean "days since account creation" — which is
-        // misleading for a user who installed the app, never logged a
-        // mood, and saw "100 DAYS" in their stats. Renamed to "ACTIVE
-        // DAYS" and computed from distinct mood-dates so the number
-        // reflects engagement. The label changed in the JSX below.
-        const activeDays = new Set(moods.map((m) => m.date)).size;
-        setStats({ moods: moods.length, chats: chats.length, days: activeDays });
-      } catch {
-        setStats({ moods: 0, chats: 0, days: 0 });
-      }
-    })();
-  }, []);
+  // v0.9: re-read on every focus. Without this, after Reset clears
+  // AsyncStorage, this screen would still show the old profile + stats
+  // until the user manually navigates away and back. useFocusEffect
+  // picks up storage events from any tab. See plans/05 P1-13.
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        try {
+          const p = await storage.getProfile();
+          setProfile(p);
+          const moods = await storage.getMoods();
+          const chats = await storage.getChats();
+          // "DAYS" used to mean "days since account creation" — which is
+          // misleading for a user who installed the app, never logged a
+          // mood, and saw "100 DAYS" in their stats. Renamed to "ACTIVE
+          // DAYS" and computed from distinct mood-dates so the number
+          // reflects engagement. The label changed in the JSX below.
+          const activeDays = new Set(moods.map((m) => m.date)).size;
+          setStats({ moods: moods.length, chats: chats.length, days: activeDays });
+        } catch {
+          setStats({ moods: 0, chats: 0, days: 0 });
+        }
+      })();
+    }, []),
+  );
 
   // Settings row. When `onPress` is set it's a tappable row with a
   // chevron and a hover state. When unset it's a read-only display row
