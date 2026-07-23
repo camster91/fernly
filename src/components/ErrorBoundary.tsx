@@ -12,23 +12,15 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, space, type as t, radius } from '../theme';
-
-// v0.9 (F-P0-2): Sentry integration. Defer the require() to
-// componentDidCatch so a missing dep (sentry-expo not yet
-// installed) doesn't break the build. The contract: when DSN is
-// provided + Expo is in production, real crash reports are sent.
-// Without a DSN OR in dev, the require resolves to an undefined
-// module and Sentry?.captureException?.() short-circuits. We never
-// block render on Sentry.
-function captureException(error: Error, info: { componentStack?: string | null }) {
-  try {
-    const Sentry = require('sentry-expo');
-    Sentry?.captureException?.(error, { extra: { componentStack: info.componentStack ?? '' } });
-  } catch {
-    // sentry-expo not installed, or captureException threw.
-    // console.error already fired on the line above.
-  }
-}
+// v0.9 (F-P0-2): forward caught errors to Sentry. Sentry.init() in
+// index.ts decides whether the call is a real network report or a
+// no-op (no DSN, or dev mode). We keep console.error so the dev
+// overlay still surfaces the crash for the human-in-the-loop.
+// `sentry-expo@7.2.0` exposes the v7 API via `Sentry.Native.*`
+// (rather than the v6 `Sentry.captureException`). Optional-chaining
+// `Sentry?.Native?.captureException?.(...)` keeps the call safe
+// when the dep is missing during local builds before install.
+import * as Sentry from 'sentry-expo';
 
 interface Props {
   children: React.ReactNode;
@@ -50,14 +42,19 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   override componentDidCatch(error: Error, info: React.ErrorInfo) {
     // v0.8: console.error surfaces the failure to the dev overlay AND
-    // is captured by Expo's dev-mode crash handler. When Sentry ships
-    // (DevOps C3), replace this with Sentry.captureException.
-    // v0.9 (F-P0-2): forward the error to Sentry instead of
-    // console.error. Sentry.init() in index.ts controls the actual
-    // network call; if no DSN is configured this is a no-op. We keep
-    // console.error for the dev-overlay feedback loop.
+    // is captured by Expo's dev-mode crash handler.
+    // v0.9 (F-P0-2): report to Sentry with the component stack as an
+    // extra. Sentry.Native.captureException is a no-op when Sentry.init
+    // has not bound a DSN (see index.ts).
     console.error('[ErrorBoundary] render failure', error, info.componentStack);
-    captureException(error, info);
+    try {
+      Sentry?.Native?.captureException?.(error, {
+        extra: { componentStack: info.componentStack ?? '' },
+      });
+    } catch {
+      // sentry-expo threw — never let the crash reporter re-throw
+      // inside the boundary, that would create a loop.
+    }
   }
 
   reset = () => {
