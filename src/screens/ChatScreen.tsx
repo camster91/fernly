@@ -97,6 +97,15 @@ export function ChatScreen() {
   // same promise.
   const sessionCreateRef = useRef<Promise<ChatSession> | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // v0.9: FlatList ref so we can scroll to end on initial mount and
+  // when a new message lands. Replaces the `inverted` prop removed in
+  // this commit (plans/05 P1-12).
+  const chatListRef = useRef<FlatList<ChatMessage>>(null);
+  // v0.9: track whether the user has scrolled up so we don't
+  // auto-scroll when they're reading older messages. Without this,
+  // every new user message would yank the screen to the bottom
+  // even if the user had intentionally scrolled up to read history.
+  const [stickToBottom, setStickToBottom] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -262,6 +271,23 @@ export function ChatScreen() {
     }
   }
 
+  // v0.9: scroll-to-end on mount and on every new message IF the
+  // user is still glued to the bottom. If they've scrolled up to read
+  // history, we don't yank them back. Plans/05 P1-12.
+  useEffect(() => {
+    if (!loaded) return;
+    if (messages.length === 0) return;
+    if (!stickToBottom) return;
+    // requestAnimationFrame ensures the list has rendered before we
+    // measure scrollToEnd. Without it, scrollToEnd occasionally
+    // fires before the new row has been laid out, leaving the user
+    // one row from the bottom.
+    const id = requestAnimationFrame(() => {
+      chatListRef.current?.scrollToEnd({ animated: false });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [messages, loaded, stickToBottom]);
+
   // Use the shared MASCOT_EMOJI map. Empty-state fallback is 🌙 (the
   // onboarding default mascot) — not 🐝 as before — so the empty chat
   // matches what the user picked during onboarding.
@@ -331,7 +357,25 @@ export function ChatScreen() {
           data={messages}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
-          inverted
+          // v0.9: dropped the inverted prop. Plans/05 P1-12 caught
+          // that the chat data is appended oldest-first (storage.ts
+          // appendMessageToSession shape) but `inverted` is meant
+          // for newest-first data. The combination rendered the
+          // conversation in reverse order on restore. Removing
+          // inverted + scrolling to end on message change matches the
+          // obvious-read direction without an array reversal
+          // (memory-cheaper for long sessions).
+          ref={chatListRef}
+          onScroll={(e) => {
+            // Track whether the user is at the bottom. Used by the
+            // auto-scroll-to-end useEffect so a user reading history
+            // doesn't get yanked. A 36pt slack handles iOS bounce
+            // overshoot and 3pt tab/touch surfaces cleanly.
+            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+            const distanceFromBottom =
+              contentSize.height - contentOffset.y - layoutMeasurement.height;
+            setStickToBottom(distanceFromBottom < 36);
+          }}
           // Padding-top is the original 60 (above the first message); padding-bottom
           // is 100 to clear the input bar.
           contentContainerStyle={messages.length > 0 ? styles.listContent : undefined}
@@ -343,6 +387,23 @@ export function ChatScreen() {
           maxToRenderPerBatch={10}
           removeClippedSubviews
         />
+        {/* v0.9: "Jump to newest" pill — only shown when the user
+            has scrolled up (stickToBottom === false). Tapping it
+            re-enables auto-scroll and scrolls to end. Same pattern
+            as iMessage / Signal. */}
+        {!stickToBottom && messages.length > 0 && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Jump to newest message"
+            onPress={() => {
+              chatListRef.current?.scrollToEnd({ animated: true });
+              setStickToBottom(true);
+            }}
+            style={styles.jumpToNewest}
+          >
+            <Text style={styles.jumpToNewestText}>↓ Newer</Text>
+          </Pressable>
+        )}
 
         <View style={styles.inputBar}>
           <TextInput
@@ -430,6 +491,20 @@ const styles = StyleSheet.create({
   quickText: { fontSize: 13, fontWeight: '600', color: colors.text },
 
   listContent: { paddingTop: 60, paddingBottom: 100 },
+  jumpToNewest: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+    backgroundColor: colors.ink,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.full,
+    minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 4px 12px rgba(42, 36, 56, 0.18)',
+  },
+  jumpToNewestText: { ...t.smallBold, color: colors.paper, fontSize: 13 },
   row: { paddingHorizontal: 18, marginBottom: 12, flexDirection: 'row' },
   rowUser: { justifyContent: 'flex-end' },
   bubble: { maxWidth: '78%', padding: 14, borderRadius: 22 },
