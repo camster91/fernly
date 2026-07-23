@@ -1,5 +1,5 @@
 // Profile / You screen
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
@@ -25,31 +25,25 @@ export function ProfileScreen({ navigation }: Props) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState({ moods: 0, chats: 0, days: 0 });
 
-  // v0.9: re-read on every focus. Without this, after Reset clears
-  // AsyncStorage, this screen would still show the old profile + stats
-  // until the user manually navigates away and back. useFocusEffect
-  // picks up storage events from any tab. See plans/05 P1-13.
-  useFocusEffect(
-    useCallback(() => {
-      (async () => {
-        try {
-          const p = await storage.getProfile();
-          setProfile(p);
-          const moods = await storage.getMoods();
-          const chats = await storage.getChats();
-          // "DAYS" used to mean "days since account creation" — which is
-          // misleading for a user who installed the app, never logged a
-          // mood, and saw "100 DAYS" in their stats. Renamed to "ACTIVE
-          // DAYS" and computed from distinct mood-dates so the number
-          // reflects engagement. The label changed in the JSX below.
-          const activeDays = new Set(moods.map((m) => m.date)).size;
-          setStats({ moods: moods.length, chats: chats.length, days: activeDays });
-        } catch {
-          setStats({ moods: 0, chats: 0, days: 0 });
-        }
-      })();
-    }, []),
-  );
+  useEffect(() => {
+    (async () => {
+      try {
+        const p = await storage.getProfile();
+        setProfile(p);
+        const moods = await storage.getMoods();
+        const chats = await storage.getChats();
+        // "DAYS" used to mean "days since account creation" — which is
+        // misleading for a user who installed the app, never logged a
+        // mood, and saw "100 DAYS" in their stats. Renamed to "ACTIVE
+        // DAYS" and computed from distinct mood-dates so the number
+        // reflects engagement. The label changed in the JSX below.
+        const activeDays = new Set(moods.map((m) => m.date)).size;
+        setStats({ moods: moods.length, chats: chats.length, days: activeDays });
+      } catch {
+        setStats({ moods: 0, chats: 0, days: 0 });
+      }
+    })();
+  }, []);
 
   // Settings row. When `onPress` is set it's a tappable row with a
   // chevron and a hover state. When unset it's a read-only display row
@@ -157,34 +151,9 @@ export function ProfileScreen({ navigation }: Props) {
       </View>
 
       <View style={styles.statsRow}>
-        {/* v0.9: defer the stats row for new users. A '0 / 0 / 0' row
-            to a brand-new user reads as evaluative before they've done
-            anything. Show a single welcoming CTA instead until they
-            have at least one mood entry. Plans/05 P2-21. */}
-        {stats.moods === 0 ? (
-          <View style={styles.welcomeCard}>
-            <Text style={styles.welcomeTitle}>Welcome 🌱</Text>
-            <Text style={styles.welcomeBody}>
-              Stats appear here after your first mood check-in. The biggest first step is opening a
-              check-in from Today.
-            </Text>
-            <Pressable
-              onPress={() => nav.navigate('MoodCheckIn')}
-              accessibilityRole="button"
-              accessibilityLabel="Open the mood check-in"
-              accessibilityHint="Starts your first mood entry"
-              style={({ pressed }) => [styles.welcomeCta, pressed && { opacity: 0.85 }]}
-            >
-              <Text style={styles.welcomeCtaText}>Check in</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <>
-            <Stat bg={colors.lavender50} value={String(stats.days)} label="ACTIVE DAYS" />
-            <Stat bg={colors.peach50} value={String(stats.moods)} label="MOODS" />
-            <Stat bg={colors.mint50} value={String(profile?.goals?.length ?? 0)} label="GOALS" />
-          </>
-        )}
+        <Stat bg={colors.lavender50} value={String(stats.days)} label="ACTIVE DAYS" />
+        <Stat bg={colors.peach50} value={String(stats.moods)} label="MOODS" />
+        <Stat bg={colors.mint50} value={String(profile?.goals?.length ?? 0)} label="GOALS" />
       </View>
 
       <View style={styles.section}>
@@ -241,28 +210,6 @@ const styles = StyleSheet.create({
 
   statsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: space.s6, marginBottom: space.s6 },
   stat: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: radius.md },
-  welcomeCard: {
-    flex: 1,
-    backgroundColor: colors.lavender50,
-    borderRadius: radius.md,
-    padding: 16,
-    alignItems: 'center',
-  },
-  welcomeTitle: { ...t.bodyBold, color: colors.text, marginBottom: 6 },
-  welcomeBody: {
-    ...t.small,
-    color: colors.textSoft,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  welcomeCta: {
-    backgroundColor: colors.ink,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: radius.full,
-  },
-  welcomeCtaText: { ...t.bodyBold, color: colors.paper, fontSize: 14 },
   statValue: { fontSize: 22, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
   statLabel: { ...t.eyebrow, fontSize: 10, color: colors.textMuted, marginTop: 2 },
 
