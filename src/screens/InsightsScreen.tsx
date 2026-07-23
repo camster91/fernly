@@ -1,17 +1,18 @@
 // Insights — mood graph + auto-detected patterns
 // v0: reads from AsyncStorage, draws a real SVG line chart of last 7 days.
 import React, { useCallback, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Card, styles as cardStyles } from '../components/Card';
-import { colors, space, type as t } from '../theme';
+import { colors, radius, space, type as t } from '../theme';
 import { storage } from '../storage';
 import { localDateString } from '../util/date';
 import type { MoodEntry } from '../types';
 
 export function InsightsScreen() {
+  const nav = useNavigation<any>();
   const [moods, setMoods] = useState<MoodEntry[]>([]);
 
   // v0.9: re-read on every focus so the chart reflects MoodCheckIn
@@ -111,6 +112,24 @@ export function InsightsScreen() {
         <View style={styles.graph}>
           {filled.length >= 1 ? (
             <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
+              {/* Y-axis tick labels (1 = low, 6 = high). Rendered in
+                  emoji-text inside Svg because react-native-svg doesn't
+                  accept <Text> children reliably across exporters.
+                  Plans/05 P2-19. */}
+              {[1, 2, 3, 4, 5, 6].map((tick) => (
+                <React.Fragment key={`y-${tick}`}>
+                  <Line
+                    x1={PAD - 2}
+                    x2={W - PAD}
+                    y1={H - PAD - ((tick - 1) / 5) * (H - 2 * PAD)}
+                    y2={H - PAD - ((tick - 1) / 5) * (H - 2 * PAD)}
+                    stroke={colors.line}
+                    strokeWidth={tick === 1 || tick === 6 ? 0.6 : 0.3}
+                    strokeDasharray={tick === 1 || tick === 6 ? undefined : '2 2'}
+                  />
+                </React.Fragment>
+              ))}
+              {/* X-axis baseline */}
               <Line
                 x1={PAD}
                 y1={H - PAD}
@@ -158,6 +177,18 @@ export function InsightsScreen() {
               <Text style={styles.emptyText}>
                 Log a few moods and your week starts to take shape here.
               </Text>
+              {/* v0.9: empty-state CTA. Without this the empty Insights
+                  state is a dead-end; user has to navigate to Today
+                  manually to find the Check-in card. Plans/05 P2-20. */}
+              <Pressable
+                onPress={() => nav.navigate('MoodCheckIn')}
+                accessibilityRole="button"
+                accessibilityLabel="Log today's mood"
+                accessibilityHint="Opens the mood check-in flow"
+                style={({ pressed }) => [styles.emptyCta, pressed && { opacity: 0.85 }]}
+              >
+                <Text style={styles.emptyCtaText}>Log today's mood</Text>
+              </Pressable>
             </View>
           )}
         </View>
@@ -179,6 +210,15 @@ export function InsightsScreen() {
               </Text>
             );
           })}
+          {/* v0.9: y-axis legend. The dashed gridlines above show
+              tier positions; this legend tells the user what "1" and
+              "6" mean. Plans/05 P2-19. The chart axis is mapped from
+              score-1 (low) at the bottom to score-6 (high) at the
+              top — same convention as the MoodPicker emoji buttons. */}
+          <View style={styles.yLegend}>
+            <Text style={styles.yLegendText}>1 = low</Text>
+            <Text style={styles.yLegendText}>6 = high</Text>
+          </View>
         </View>
       </Card>
 
@@ -214,6 +254,20 @@ const styles = StyleSheet.create({
   },
   statLabel: { ...t.eyebrow, color: colors.textMuted, marginTop: 4 },
   statSub: { ...t.small, color: colors.textMuted },
+  yLegend: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  yLegendText: { ...t.small, color: colors.textMuted, fontSize: 10 },
+  emptyCta: {
+    marginTop: space.s3,
+    backgroundColor: colors.ink,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: radius.full,
+  },
+  emptyCtaText: { ...t.bodyBold, color: colors.paper, fontSize: 14 },
 
   graph: { height: 100, marginVertical: space.s3 },
   emptyGraph: { flex: 1, alignItems: 'center', justifyContent: 'center' },
