@@ -274,9 +274,7 @@ export async function verifyResourceReachability(
           verifiedUrls.set(url, now);
           // Persist asynchronously — don't await on the hot path so a slow
           // AsyncStorage write can't stretch the post-launch banner window.
-          storage
-            .setVerifiedUrls(Object.fromEntries(verifiedUrls))
-            .catch(() => undefined);
+          storage.setVerifiedUrls(Object.fromEntries(verifiedUrls)).catch(() => undefined);
         }
       } catch {
         // silent — unreachable URL just stays out of the cache
