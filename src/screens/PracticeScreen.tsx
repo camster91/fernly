@@ -30,6 +30,19 @@ export function PracticeScreen() {
       <View style={styles.header}>
         <Text style={styles.h1}>Practice</Text>
         <Text style={styles.sub}>Pick what fits right now.</Text>
+        {/* v0.9: surface "how many of these are real" up front. Otherwise
+            users assume every card is actionable — 7/8 show as
+            "Coming soon" stubs on tap. Plans/05 P2-18. */}
+        <View style={styles.legend}>
+          <View style={styles.legendChip}>
+            <Text style={styles.legendDot}>●</Text>
+            <Text style={styles.legendText}>1 available now</Text>
+          </View>
+          <View style={styles.legendChip}>
+            <Text style={[styles.legendDot, { color: colors.textMuted }]}>●</Text>
+            <Text style={styles.legendText}>7 coming soon</Text>
+          </View>
+        </View>
       </View>
 
       {exercises.map((ex) => {
@@ -67,6 +80,10 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: space.s6, paddingTop: space.s7, paddingBottom: space.s5 },
   h1: { ...t.displayLg, color: colors.text, marginBottom: 6 },
   sub: { ...t.body, color: colors.textSoft },
+  legend: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  legendChip: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot: { fontSize: 10, color: colors.accent },
+  legendText: { ...t.small, color: colors.textSoft },
 
   row: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
   icon: {
