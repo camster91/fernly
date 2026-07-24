@@ -70,12 +70,16 @@ describe('crisis detector: punctuation and abbreviated bypasses (regression)', (
     expect(detectCrisis(input).level).toBe('hard');
   });
 
-  it.todo(
-    '"k1ll m3" must be hard — leetspeak+letter-space hybrid. Blocked on a more ' +
-      'aggressive normalizer (current collapse min is 4 letters; this token is 3+2). ' +
-      'Punted to F-P1-2 follow-up because expanding the normalizer has Portuguese ' +
-      'false-positive risk ("não a", "y a") that the simpler "hard pattern" route avoids.',
-  );
+  // v0.9 (F-P1-2 follow-up): explicit pattern catches the
+  // leet+space hybrid. The normalizer can't safely collapse 2+1
+  // letter runs across spaces (Portuguese false-positive risk),
+  // so we hit this specific shape directly.
+  it('"k1ll m3" must be hard', () => {
+    expect(detectCrisis('k1ll m3').level).toBe('hard');
+  });
+  it('"k1llme" must be hard (no space variant)', () => {
+    expect(detectCrisis('k1llme').level).toBe('hard');
+  });
 });
 
 describe('crisis detector: contemporary slang + euphemisms (spec)', () => {

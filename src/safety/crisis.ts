@@ -109,6 +109,15 @@ const HARD_PATTERNS: RegExp[] = [
   // common ones directly. Same constraint: catch the crisis tokens,
   // leave everyday language alone.
   /\b(k\s+y\s+s|k\s+m\s+s)\b/i,
+  // v0.9 (F-P1-2 follow-up): leet+letter-space hybrids. The normalizer
+  // can't safely collapse 2-letter runs across spaces (Portuguese
+  // false-positive risk), so explicit patterns for the common
+  // "k1ll m3" / "k1ll me" / "ky5 m3" forms. The {1,3} numeric run
+  // is greedy enough to match "3", "m3", "m3e" without gobbling
+  // non-leet text.
+  /\bk\s*[il1]+\s*l\s*l?\s*[\s,.;:!\-_]*\s*m[\s,.;:!\-_]*e\b/i,
+  /\bk\s*[il1]+\s*l\s*l?\s*[\s,.;:!\-_]*\s*m[\s,.;:!\-_]*[s5]\b/i,
+  /\bk\s*[y]\s*[s5]\b/i,
   // v0.8: tightened to require a negative prefix OR a negative suffix.
   // Previously matched `alive` standalone (the word "I'm glad to be
   // alive" was tripping hard). The original 7-category spec from plans/
