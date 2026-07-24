@@ -1,0 +1,66 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 0.9.0)'
+        required: true
+permissions:
+  contents: write
+jobs:
+  build:
+    name: EAS Build + Submit
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      # Pin EAS CLI version — same version as the local dev toolchain
+      # to avoid "works on my machine" surprises.
+      - name: Install EAS CLI
+        run: npm install -g eas-cli@^13
+      # Expo Application Services (EAS) build + TestFlight submit.
+      # `eas submit --latest --platform ios` uploads the latest iOS
+      # build to TestFlight. `--auto-submit` with `appleIdAppIdentifier`
+      # in eas.json + App Store Connect API key in secrets handles the
+      # final review submission.
+      - name: Build for iOS (TestFlight)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          eas build --platform ios --non-interactive --no-wait
+      - name: Submit iOS to TestFlight
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          # Wait for the build to complete, then submit. The exact
+          # pattern depends on the build profile in eas.json.
+          eas submit --platform ios --latest --auto-submit
+      - name: Build for Android (Internal track)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas build --platform android --non-interactive --no-wait
+      - name: Submit Android to Play Internal
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: eas submit --platform android --latest --track internal
+      # Optional: bump version on `main` after a successful release.
+      # Convention: tag v0.9.0 → version bumps to 0.10.0 on main.
+      - name: Bump version on main
+        if: success()
+        run: |
+          NEW_VERSION=$(./scripts/next-version.sh "${{ github.ref_name }}")
+          ./scripts/bump-version.sh "$NEW_VERSION"
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git commit -am "chore(release): bump to v$NEW_VERSION [skip ci]"
+          git push origin main
