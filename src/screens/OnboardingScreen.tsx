@@ -10,9 +10,21 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { ScreenContainer } from '../components/ScreenContainer';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
-import type { Goal, Mascot, Tone, UserProfile } from '../types';
+import type { Goal, Mascot, MoodScore, Tone, UserProfile } from '../types';
 
-const MOOD_CHOICES = ['Anxious', 'Numb', 'Tired', 'Hopeful', 'Overwhelmed', 'Okay', 'Lonely'];
+// v0.9: changed `MOOD_CHOICES` from string[] to { label: MoodScore, text }
+// so the onboarding pick is persisted as a real score (1-6), not a free-
+// text string nobody reads. TodayScreen can greet the user with their
+// starting mood on first launch. See plans/05 P1-15.
+const MOOD_CHOICES: { label: MoodScore; text: string }[] = [
+  { label: 2, text: 'Anxious' },
+  { label: 1, text: 'Numb' },
+  { label: 2, text: 'Tired' },
+  { label: 5, text: 'Hopeful' },
+  { label: 2, text: 'Overwhelmed' },
+  { label: 4, text: 'Okay' },
+  { label: 2, text: 'Lonely' },
+];
 const GOALS: { id: Goal; label: string }[] = [
   { id: 'sleep', label: '💤 Sleep better' },
   { id: 'quiet_thoughts', label: '🧠 Quiet my thoughts' },
@@ -56,14 +68,23 @@ interface Props {
 export function OnboardingScreen({ onDone }: Props) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
-  const [mood, setMood] = useState<string | null>(null);
+  // v0.9: MoodScore (1-6) instead of free-text string. Previously the
+  // picked mood was discarded — kept as a 'string | null' with no
+  // receiver. Now it persists as initialMood on the profile. See P1-15.
+  const [mood, setMood] = useState<MoodScore | null>(null);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [mascot, setMascot] = useState<Mascot>('moon');
   const [tone, setTone] = useState<Tone>('soft');
 
   const total = 5;
   function next() {
-    if (step < total) setStep((s) => s + 1);
+    // v0.8: trigger save() at `total - 1` (= 4) so the "Begin" button on
+    // step 5 (the last step) calls save() instead of advancing to a
+    // blank step 6. Previously `step < total` left an off-by-one where
+    // tapping "Begin" on step 4 (the last step with content) set step to
+    // 5, no JSX rendered, and the user was stuck on a blank screen.
+    // See plans/05-full-codebase-review-2026-07-22.md P0-2.
+    if (step < total - 1) setStep((s) => s + 1);
     else save();
   }
   function back() {
@@ -82,6 +103,10 @@ export function OnboardingScreen({ onDone }: Props) {
       goals,
       onboarded: true,
       createdAt: new Date().toISOString(),
+      // v0.9: persist the onboarding mood pick so it can be surfaced
+      // on the Today greeting instead of being collected and discarded.
+      // See plans/05 P1-15.
+      initialMood: mood ?? undefined,
     };
     await storage.setProfile(profile);
     onDone();
@@ -98,7 +123,7 @@ export function OnboardingScreen({ onDone }: Props) {
 
   return (
     <ScreenContainer scroll={false}>
-      <View style={styles.dots}>
+      <View style={styles.dots} accessible={false} accessibilityElementsHidden>
         {Array.from({ length: total }).map((_, i) => (
           <View
             key={i}
@@ -123,6 +148,8 @@ export function OnboardingScreen({ onDone }: Props) {
               style={styles.input}
               returnKeyType="next"
               onSubmitEditing={next}
+              accessibilityLabel="Your first name"
+              accessibilityHint="What Fernly should call you in the app"
             />
           </Step>
         )}
@@ -133,11 +160,17 @@ export function OnboardingScreen({ onDone }: Props) {
             <View style={styles.pillRow}>
               {MOOD_CHOICES.map((m) => (
                 <Pressable
-                  key={m}
-                  onPress={() => setMood(m)}
-                  style={[styles.pill, mood === m && styles.pillActive]}
+                  key={m.text}
+                  onPress={() => setMood(m.label)}
+                  accessibilityRole="button"
+                  accessibilityLabel={m.text}
+                  accessibilityState={{ selected: mood === m.label }}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  style={[styles.pill, mood === m.label && styles.pillActive]}
                 >
-                  <Text style={[styles.pillText, mood === m && styles.pillTextActive]}>{m}</Text>
+                  <Text style={[styles.pillText, mood === m.label && styles.pillTextActive]}>
+                    {m.text}
+                  </Text>
                 </Pressable>
               ))}
             </View>
@@ -152,6 +185,10 @@ export function OnboardingScreen({ onDone }: Props) {
                 <Pressable
                   key={g.id}
                   onPress={() => toggleGoal(g.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={g.label}
+                  accessibilityState={{ selected: goals.includes(g.id) }}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   style={[styles.pill, goals.includes(g.id) && styles.pillActive]}
                 >
                   <Text style={[styles.pillText, goals.includes(g.id) && styles.pillTextActive]}>
@@ -171,6 +208,9 @@ export function OnboardingScreen({ onDone }: Props) {
                 <Pressable
                   key={m.id}
                   onPress={() => setMascot(m.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Choose ${m.id} as your friend mascot`}
+                  accessibilityState={{ selected: mascot === m.id }}
                   style={[styles.mascotBox, mascot === m.id && styles.mascotBoxActive]}
                 >
                   <Text style={styles.mascotEmoji}>{m.emoji}</Text>
@@ -182,12 +222,20 @@ export function OnboardingScreen({ onDone }: Props) {
 
         {step === 4 && (
           <Step title="How should Fernly talk?" eyebrow="STEP 5 OF 5">
-            <Text style={styles.sub}>Change anytime in settings.</Text>
+            {/* v0.9: "Change anytime in settings" was a lie in v0.8 —
+                settings is forward-compatible (Settings route is reserved
+                in RootStackParamList) but not yet shipped. Real options
+                are: (a) reset Fernly and re-onboard, or (b) wait for v1.
+                See plans/05 P1-20. */}
+            <Text style={styles.sub}>Change anytime by resetting Fernly from your Profile.</Text>
             <View style={{ gap: 10 }}>
               {TONES.map((tn) => (
                 <Pressable
                   key={tn.id}
                   onPress={() => setTone(tn.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${tn.label} tone. ${tn.sample}`}
+                  accessibilityState={{ selected: tone === tn.id }}
                   style={[
                     styles.toneCard,
                     { backgroundColor: tn.bg },
@@ -205,13 +253,23 @@ export function OnboardingScreen({ onDone }: Props) {
 
       <View style={styles.footer}>
         {step > 0 && (
-          <Pressable onPress={back} style={styles.back}>
+          <Pressable
+            onPress={back}
+            accessibilityRole="button"
+            accessibilityLabel="Go back to the previous step"
+            style={styles.back}
+          >
             <Text style={styles.backText}>Back</Text>
           </Pressable>
         )}
         <Pressable
           onPress={next}
           disabled={!canAdvance()}
+          accessibilityRole="button"
+          accessibilityLabel={
+            step === total - 1 ? 'Begin using Fernly' : 'Continue to the next step'
+          }
+          accessibilityState={{ disabled: !canAdvance() }}
           style={({ pressed }) => [
             styles.cta,
             !canAdvance() && styles.ctaDisabled,

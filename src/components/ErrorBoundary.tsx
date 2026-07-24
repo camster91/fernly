@@ -1,0 +1,119 @@
+// Top-level ErrorBoundary — catches render errors anywhere in the tree
+// and shows a recovery screen instead of a blank white app.
+//
+// v0.8: ships alongside plans/05-full-codebase-review-2026-07-22.md P0-6.
+// OnErrorBoundaryState shape keeps the last error so the recovery UI can
+// show what happened without re-throwing in render.
+//
+// Recovery: "Try again" resets the boundary state, which re-mounts the
+// children (the navigator tree). For a wellness app, getting the user
+// back to the home screen in one tap is the priority; deep error data
+// is logged for crash-reporting but not shown in the recovery UI.
+import React from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { colors, space, type as t, radius } from '../theme';
+// v0.9 (F-P0-2): forward caught errors to Sentry. Sentry.init() in
+// index.ts decides whether the call is a real network report or a
+// no-op (no DSN, or dev mode). We keep console.error so the dev
+// overlay still surfaces the crash for the human-in-the-loop.
+// `sentry-expo@7.2.0` exposes the v7 API via `Sentry.Native.*`
+// (rather than the v6 `Sentry.captureException`). Optional-chaining
+// `Sentry?.Native?.captureException?.(...)` keeps the call safe
+// when the dep is missing during local builds before install.
+import * as Sentry from 'sentry-expo';
+
+interface Props {
+  children: React.ReactNode;
+}
+
+interface State {
+  hasError: boolean;
+  // Stored so it can be attached to a crash-report payload if one
+  // ships later. Not rendered to the user.
+  error: Error | null;
+}
+
+export class ErrorBoundary extends React.Component<Props, State> {
+  override state: State = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+
+  override componentDidCatch(error: Error, info: React.ErrorInfo) {
+    // v0.8: console.error surfaces the failure to the dev overlay AND
+    // is captured by Expo's dev-mode crash handler.
+    // v0.9 (F-P0-2): report to Sentry with the component stack as an
+    // extra. Sentry.Native.captureException is a no-op when Sentry.init
+    // has not bound a DSN (see index.ts).
+    console.error('[ErrorBoundary] render failure', error, info.componentStack);
+    try {
+      Sentry?.Native?.captureException?.(error, {
+        extra: { componentStack: info.componentStack ?? '' },
+      });
+    } catch {
+      // sentry-expo threw — never let the crash reporter re-throw
+      // inside the boundary, that would create a loop.
+    }
+  }
+
+  reset = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
+  override render() {
+    if (!this.state.hasError) return this.props.children;
+
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>Something went wrong.</Text>
+        <Text style={styles.body}>
+          We hit an unexpected error. Your data is safe — try again, and if it keeps happening,
+          restart the app from the Profile tab.
+        </Text>
+        <Pressable
+          onPress={this.reset}
+          accessibilityRole="button"
+          accessibilityLabel="Try again"
+          accessibilityHint="Resets the app to the home screen"
+          style={({ pressed }) => [styles.cta, pressed && { opacity: 0.85 }]}
+        >
+          <Text style={styles.ctaText}>Try again</Text>
+        </Pressable>
+      </View>
+    );
+  }
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space.s6,
+    backgroundColor: colors.bg,
+  },
+  title: {
+    ...t.displayLg,
+    color: colors.text,
+    marginBottom: space.s3,
+    textAlign: 'center',
+  },
+  body: {
+    ...t.body,
+    color: colors.textSoft,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: space.s5,
+  },
+  cta: {
+    backgroundColor: colors.ink,
+    paddingVertical: 16,
+    paddingHorizontal: 28,
+    borderRadius: radius.full,
+  },
+  ctaText: {
+    ...t.bodyBold,
+    color: colors.paper,
+  },
+});

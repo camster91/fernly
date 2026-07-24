@@ -16,8 +16,9 @@ import { ExerciseScreen } from '../screens/ExerciseScreen';
 import { InsightsScreen } from '../screens/InsightsScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
 import { MoodCheckInScreen } from '../screens/MoodCheckInScreen';
-import { colors } from '../theme';
+import { colors, type as t } from '../theme';
 import { storage, onStorageReset } from '../storage';
 
 import type { NavigatorScreenParams } from '@react-navigation/native';
@@ -34,6 +35,10 @@ export type RootStackParamList = {
   Tabs: NavigatorScreenParams<TabParamList>;
   MoodCheckIn: undefined;
   Exercise: { exerciseId: string };
+  // Settings is reserved for a future in-app settings screen (privacy,
+  // data controls, tone change). Today the ProfileScreen "Legal & safety"
+  // row shows an Alert.alert placeholder; the route type is forward-
+  // compatible so the screen can land without further type churn.
   Settings: undefined;
 };
 
@@ -62,36 +67,67 @@ function Tabs() {
       <Tab.Screen
         name="Today"
         component={TodayScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="✿" focused={focused} /> }}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon glyph="✿" focused={focused} />,
+          // v0.7: VoiceOver/TalkBack previously announced the emoji glyph
+          // ("cherry blossom") instead of "Today, tab 1 of 5". Explicit
+          // labels fix the disambiguation.
+          tabBarAccessibilityLabel: 'Today, tab 1 of 5',
+        }}
       />
       <Tab.Screen
         name="Chat"
         component={ChatScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="💬" focused={focused} /> }}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon glyph="💬" focused={focused} />,
+          tabBarAccessibilityLabel: 'Chat, tab 2 of 5',
+        }}
       />
       <Tab.Screen
         name="Practice"
         component={PracticeScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="🧘" focused={focused} /> }}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon glyph="🧘" focused={focused} />,
+          tabBarAccessibilityLabel: 'Practice, tab 3 of 5',
+        }}
       />
       <Tab.Screen
         name="Insights"
         component={InsightsScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="📊" focused={focused} /> }}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon glyph="📊" focused={focused} />,
+          tabBarAccessibilityLabel: 'Insights, tab 4 of 5',
+        }}
       />
       <Tab.Screen
         name="You"
         component={ProfileScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon glyph="👤" focused={focused} /> }}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon glyph="👤" focused={focused} />,
+          tabBarAccessibilityLabel: 'Profile, tab 5 of 5',
+        }}
       />
     </Tab.Navigator>
   );
 }
 
 function LoadingScreen() {
+  // v0.9: screen-reader friendly brand + spinner. Previously a
+  // bare ActivityIndicator on a bg-colored View — VoiceOver/TalkBack
+  // users heard "Loading..." with no context. Plans/05 P2-22.
   return (
-    <View style={styles.loading}>
+    <View
+      style={styles.loading}
+      accessible={true}
+      accessibilityRole="progressbar"
+      accessibilityLabel="Loading your space. One moment while we read your profile."
+    >
+      <Text style={styles.loadingMark} accessibilityElementsHidden>
+        🌱
+      </Text>
       <ActivityIndicator size="large" color={colors.accent} />
+      <Text style={styles.loadingText}>Loading your space</Text>
+      <Text style={styles.loadingHint}>One moment while we read your profile.</Text>
     </View>
   );
 }
@@ -154,6 +190,14 @@ export function RootNav() {
               options={{ presentation: 'modal' }}
             />
             <Stack.Screen name="Exercise" component={ExerciseScreen} />
+            {/* v0.9: real Settings screen — replaces the Alert.alert
+                placeholders that ProfileScreen was triggering for
+                "Export your data" / "Legal & safety" / etc. */}
+            <Stack.Screen
+              name="Settings"
+              component={SettingsScreen}
+              options={{ presentation: 'modal' }}
+            />
           </Stack.Navigator>
         )}
       </NavigationContainer>
@@ -163,6 +207,9 @@ export function RootNav() {
 
 const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
+  loadingMark: { fontSize: 48, marginBottom: 12 },
+  loadingText: { ...t.body, color: colors.text, marginTop: 12 },
+  loadingHint: { ...t.small, color: colors.textMuted, marginTop: 4 },
   tabBar: {
     backgroundColor: colors.paper2,
     borderTopWidth: 1,

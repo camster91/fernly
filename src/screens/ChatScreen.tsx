@@ -8,11 +8,13 @@
 //   - Per-session SecureStore key, no full-array rewrite on send
 //   - Message cap: 200 messages per session (FIFO drop)
 //   - Inflight guard: isSending blocks duplicate sends
-//   - AbortController declared for future LLM call
 //   - TextInput maxLength: 4000 chars (prevents 10k-char pastes)
 //   - Memoized message bubble to avoid re-render on every keystroke
+// v0.7: removed abortRef + useRef (no fetch yet). When the LLM ships,
+// AbortController + useRef re-enter.
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   ListRenderItem,
@@ -28,13 +30,15 @@ import { CrisisModal } from '../components/CrisisModal';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import { detectCrisis } from '../safety/crisis';
-import type { ChatMessage, CrisisAuditEntry, UserProfile, Tone } from '../types';
+import { MASCOT_EMOJI, MASCOT_EMOJI_FALLBACK } from '../data/mascots';
+import type { ChatMessage, ChatSession, CrisisAuditEntry, UserProfile, Tone } from '../types';
+import { fetchReply, readChatBackendUrl } from '../api/chat';
 
 const MAX_INPUT_LENGTH = 4000;
 
 // Deterministic mock responder — picks a reply based on user input + their tone.
 // NOT an LLM. Replace with real chat backend in build week 3.
-function mockReply(input: string, tone: Tone, _mascot: string): string {
+function mockReply(input: string, tone: Tone): string {
   const text = input.toLowerCase();
   const softBank = [
     'That sounds heavy. Want to sit with it for a sec?',
@@ -81,18 +85,31 @@ export function ChatScreen() {
   const [crisisVisible, setCrisisVisible] = useState(false);
   const [crisisMatched, setCrisisMatched] = useState<string | undefined>();
   const [isSending, setIsSending] = useState(false);
+  // v0.8: useRef for the in-flight guard. useState lags one render
+  // commit, so a rapid double-tap (keyboard Enter + send-button
+  // press before React re-renders) sees isSending === false on
+  // both invocations and runs send() twice — duplicate messages,
+  // duplicate session creations. See plans/05-full-codebase-review-
+  // 2026-07-22.md P0-4.
+  const isSendingRef = useRef(false);
+  // Single-flight guard for createChatSession — the !sessionId branch
+  // is async and can race against itself on rapid taps. The first
+  // invocation populates this ref; concurrent invocations await the
+  // same promise.
+  const sessionCreateRef = useRef<Promise<ChatSession> | null>(null);
   const [loaded, setLoaded] = useState(false);
-
-  // AbortController for the future LLM call. Declared now so the v0 mock
-  // path can wire cancellation hooks; the mock itself is synchronous and
-  // doesn't need cancellation, but the next PR that adds a real fetch
-  // can reuse this.
-  const abortRef = useRef<AbortController | null>(null);
+  // v0.9: FlatList ref so we can scroll to end on initial mount and
+  // when a new message lands. Replaces the `inverted` prop removed in
+  // this commit (plans/05 P1-12).
+  const chatListRef = useRef<FlatList<ChatMessage>>(null);
+  // v0.9: track whether the user has scrolled up so we don't
+  // auto-scroll when they're reading older messages. Without this,
+  // every new user message would yank the screen to the bottom
+  // even if the user had intentionally scrolled up to read history.
+  const [stickToBottom, setStickToBottom] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    const controller = new AbortController();
-    abortRef.current = controller;
     (async () => {
       try {
         const p = await storage.getProfile();
@@ -109,12 +126,17 @@ export function ChatScreen() {
         if (cancelled) return;
         if (id) {
           const session = await storage.getChatSession(id);
+          // v0.8: check cancelled AFTER every async hop. The previous
+          // code only checked once after the await, so a navigaway-
+          // mid-resolve still triggered the stale-id write at line 112.
+          // See plans/05-full-codebase-review-2026-07-22.md P0-5.
           if (cancelled) return;
           if (session) {
             setActiveSessionId(session.id);
             setMessages(session.messages);
-          } else {
-            // Active id is stale — clear it.
+          } else if (!cancelled) {
+            // Active id is stale — clear it. Guarded by cancelled
+            // so an unmount doesn't clobber persisted state.
             await storage.setActiveSessionId(null);
           }
         }
@@ -127,34 +149,48 @@ export function ChatScreen() {
     })();
     return () => {
       cancelled = true;
-      controller.abort();
     };
   }, []);
 
   async function send() {
-    if (isSending) return;
+    // v0.8: useRef-backed guard (lines 86-88) instead of useState isSending.
+    // useState lags one render commit — rapid double-tap (keyboard Enter
+    // + send-button press) sees isSending === false on both invocations.
+    // The ref flips synchronously inside the same tick.
+    if (isSendingRef.current) return;
     const text = input.trim();
     if (!text) return;
-
-    setIsSending(true);
+    isSendingRef.current = true;
+    setIsSending(true); // also drives the UI disabled state
+    // v0.9: keep the original text as a draft. If any persistence
+    // step throws, restore the draft so the user can retry instead
+    // of seeing their message vanish. For a wellness app where the
+    // content may be emotionally important, silent text loss is the
+    // worst possible failure mode. See plans/05 P1-11.
+    const draft = input;
     setInput('');
 
     try {
       // CRISIS CHECK FIRST. If hard, the modal wins, the LLM never sees this.
       const verdict = detectCrisis(text);
 
-      // Ensure there's an active session — create one if not. This is the
-      // single point where sessions are created, so the active-session-id
-      // invariant always holds after a successful send.
+      // Ensure there's an active session — create one if not. Single-flight
+      // guard so concurrent sends share the same createChatSession
+      // promise instead of racing each other (which used to create two
+      // sessions and double-append messages).
       let sessionId = activeSessionId;
       if (!sessionId) {
-        const session = await storage.createChatSession([]);
+        if (!sessionCreateRef.current) {
+          sessionCreateRef.current = storage.createChatSession([]);
+        }
+        const session = await sessionCreateRef.current;
+        sessionCreateRef.current = null;
         sessionId = session.id;
         setActiveSessionId(session.id);
       }
 
       const userMsg: ChatMessage = {
-        id: `${Date.now()}-u`,
+        id: crypto.randomUUID(),
         role: 'user',
         text,
         at: new Date().toISOString(),
@@ -162,7 +198,7 @@ export function ChatScreen() {
 
       if (verdict.level === 'hard') {
         const blocked: ChatMessage = {
-          id: `${Date.now()}-f`,
+          id: crypto.randomUUID(),
           role: 'fernly',
           text: '[crisis modal shown — AI response suppressed]',
           at: new Date().toISOString(),
@@ -180,7 +216,7 @@ export function ChatScreen() {
         // encrypted SecureStore; schema-versioned.
         const audit: CrisisAuditEntry = {
           version: 1,
-          id: `${Date.now()}-audit`,
+          id: crypto.randomUUID(),
           at: new Date().toISOString(),
           severity: 'hard',
           matchedPhrase: verdict.matchedPhrase,
@@ -194,7 +230,7 @@ export function ChatScreen() {
       if (verdict.level === 'soft' && verdict.matchedPhrase) {
         const softAudit: CrisisAuditEntry = {
           version: 1,
-          id: `${Date.now()}-audit`,
+          id: crypto.randomUUID(),
           at: new Date().toISOString(),
           severity: 'soft',
           matchedPhrase: verdict.matchedPhrase,
@@ -202,34 +238,81 @@ export function ChatScreen() {
         storage.appendCrisisAudit(softAudit).catch(() => undefined);
       }
 
-      // v0 mock path — synchronous, no LLM fetch yet. Future PRs swap
-      // mockReply() for a fetch() and route through the abortRef.
+      // v0.9 (F-P0-3): real backend when EXPO_PUBLIC_CHAT_API_URL is set;
+      // mockReply() otherwise. The backend wiring is in src/api/chat.ts
+      // and follows the standard { reply: string } shape. Without the
+      // env var, this branch falls back to the deterministic mock so
+      // v0 keeps working offline. Plans/05 P0-3.
       const tone = profile?.tone ?? 'soft';
-      const mascot = profile?.mascot ?? 'moon';
+      const backendUrl = readChatBackendUrl();
+      let replyText: string;
+      if (backendUrl) {
+        const abort = new AbortController();
+        // The chat-screen's unmount effect can't see this controller;
+        // we rely on the send() promise resolution + the request's own
+        // 12s timeout. Future work: wire to isCancelledRef.
+        const result = await fetchReply(
+          { input: text, tone, sessionId },
+          { url: backendUrl },
+          abort.signal,
+        );
+        replyText = result.reply;
+      } else {
+        replyText = mockReply(text, tone);
+      }
       const replyMsg: ChatMessage = {
-        id: `${Date.now()}-f`,
+        id: crypto.randomUUID(),
         role: 'fernly',
-        text: mockReply(text, tone, mascot),
+        text: replyText,
         at: new Date().toISOString(),
       };
       const afterUser = await storage.appendMessageToSession(sessionId, userMsg);
       if (afterUser) setMessages(afterUser.messages);
       const afterReply = await storage.appendMessageToSession(sessionId, replyMsg);
       if (afterReply) setMessages(afterReply.messages);
+    } catch (err) {
+      // v0.9: restore the draft so the user can retry, and surface
+      // the failure via Alert instead of silently swallowing. The
+      // previous behavior cleared `input` upfront on line 154 and
+      // let any error propagate uncaught. See plans/05 P1-11.
+      console.warn('[ChatScreen] send failed:', err);
+      setInput(draft);
+      // Alert.alert is safe to use here — RN's Alert always renders on
+      // both platforms; even if a render error boundary catches the
+      // throw above, the input draft restoration guarantees no data
+      // loss before the user sees the failure.
+      Alert.alert(
+        'Could not send your message',
+        'Your text is still in the input — try again, and if it keeps failing, restart the app.',
+      );
     } finally {
+      isSendingRef.current = false;
       setIsSending(false);
     }
   }
 
+  // v0.9: scroll-to-end on mount and on every new message IF the
+  // user is still glued to the bottom. If they've scrolled up to read
+  // history, we don't yank them back. Plans/05 P1-12.
+  useEffect(() => {
+    if (!loaded) return;
+    if (messages.length === 0) return;
+    if (!stickToBottom) return;
+    // requestAnimationFrame ensures the list has rendered before we
+    // measure scrollToEnd. Without it, scrollToEnd occasionally
+    // fires before the new row has been laid out, leaving the user
+    // one row from the bottom.
+    const id = requestAnimationFrame(() => {
+      chatListRef.current?.scrollToEnd({ animated: false });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [messages, loaded, stickToBottom]);
+
+  // Use the shared MASCOT_EMOJI map. Empty-state fallback is 🌙 (the
+  // onboarding default mascot) — not 🐝 as before — so the empty chat
+  // matches what the user picked during onboarding.
   const mascotEmoji = useMemo(
-    () =>
-      profile?.mascot === 'moon'
-        ? '🌙'
-        : profile?.mascot === 'fox'
-          ? '🦊'
-          : profile?.mascot === 'turtle'
-            ? '🐢'
-            : '🐝',
+    () => (profile?.mascot && MASCOT_EMOJI[profile.mascot]) || MASCOT_EMOJI_FALLBACK,
     [profile?.mascot],
   );
 
@@ -253,13 +336,28 @@ export function ChatScreen() {
           <Pressable
             style={styles.quickPill}
             onPress={() => setInput("I'm anxious about tomorrow.")}
+            accessibilityRole="button"
+            accessibilityLabel="I'm anxious — fill the input"
+            accessibilityHint="Starts the chat with 'I'm anxious about tomorrow.'"
           >
             <Text style={styles.quickText}>I'm anxious</Text>
           </Pressable>
-          <Pressable style={styles.quickPill} onPress={() => setInput("I can't sleep.")}>
+          <Pressable
+            style={styles.quickPill}
+            onPress={() => setInput("I can't sleep.")}
+            accessibilityRole="button"
+            accessibilityLabel="I can't sleep — fill the input"
+            accessibilityHint="Starts the chat with 'I can't sleep.'"
+          >
             <Text style={styles.quickText}>I can't sleep</Text>
           </Pressable>
-          <Pressable style={styles.quickPill} onPress={() => setInput('Today was hard.')}>
+          <Pressable
+            style={styles.quickPill}
+            onPress={() => setInput('Today was hard.')}
+            accessibilityRole="button"
+            accessibilityLabel="Today was hard — fill the input"
+            accessibilityHint="Starts the chat with 'Today was hard.'"
+          >
             <Text style={styles.quickText}>Today was hard</Text>
           </Pressable>
         </View>
@@ -279,7 +377,25 @@ export function ChatScreen() {
           data={messages}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
-          inverted
+          // v0.9: dropped the inverted prop. Plans/05 P1-12 caught
+          // that the chat data is appended oldest-first (storage.ts
+          // appendMessageToSession shape) but `inverted` is meant
+          // for newest-first data. The combination rendered the
+          // conversation in reverse order on restore. Removing
+          // inverted + scrolling to end on message change matches the
+          // obvious-read direction without an array reversal
+          // (memory-cheaper for long sessions).
+          ref={chatListRef}
+          onScroll={(e) => {
+            // Track whether the user is at the bottom. Used by the
+            // auto-scroll-to-end useEffect so a user reading history
+            // doesn't get yanked. A 36pt slack handles iOS bounce
+            // overshoot and 3pt tab/touch surfaces cleanly.
+            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+            const distanceFromBottom =
+              contentSize.height - contentOffset.y - layoutMeasurement.height;
+            setStickToBottom(distanceFromBottom < 36);
+          }}
           // Padding-top is the original 60 (above the first message); padding-bottom
           // is 100 to clear the input bar.
           contentContainerStyle={messages.length > 0 ? styles.listContent : undefined}
@@ -291,6 +407,23 @@ export function ChatScreen() {
           maxToRenderPerBatch={10}
           removeClippedSubviews
         />
+        {/* v0.9: "Jump to newest" pill — only shown when the user
+            has scrolled up (stickToBottom === false). Tapping it
+            re-enables auto-scroll and scrolls to end. Same pattern
+            as iMessage / Signal. */}
+        {!stickToBottom && messages.length > 0 && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Jump to newest message"
+            onPress={() => {
+              chatListRef.current?.scrollToEnd({ animated: true });
+              setStickToBottom(true);
+            }}
+            style={styles.jumpToNewest}
+          >
+            <Text style={styles.jumpToNewestText}>↓ Newer</Text>
+          </Pressable>
+        )}
 
         <View style={styles.inputBar}>
           <TextInput
@@ -363,15 +496,35 @@ const styles = StyleSheet.create({
   },
   quickPill: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    // v0.9: vertical padding + 13pt line height totaled ~36pt —
+    // below the WCAG AA-target 44pt touch-surface minimum. Bumped to
+    // match the MoodCheckInScreen feel. Plans/05 P2-17.
+    paddingVertical: 12,
+    minHeight: 44,
     borderRadius: radius.full,
     backgroundColor: colors.paper2,
     borderWidth: 1,
     borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   quickText: { fontSize: 13, fontWeight: '600', color: colors.text },
 
   listContent: { paddingTop: 60, paddingBottom: 100 },
+  jumpToNewest: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+    backgroundColor: colors.ink,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.full,
+    minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 4px 12px rgba(42, 36, 56, 0.18)',
+  },
+  jumpToNewestText: { ...t.smallBold, color: colors.paper, fontSize: 13 },
   row: { paddingHorizontal: 18, marginBottom: 12, flexDirection: 'row' },
   rowUser: { justifyContent: 'flex-end' },
   bubble: { maxWidth: '78%', padding: 14, borderRadius: 22 },
@@ -401,16 +554,27 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
   },
   input: { flex: 1, fontSize: 14, color: colors.text, paddingVertical: 8, maxHeight: 120 },
+  // WCAG 2.5.5 AAA: 44×44 minimum tap target. Was 56×38 (height < 44);
+  // hand tremor or imprecise taps in distress failed to register.
   mic: {
-    width: 56,
-    height: 38,
-    borderRadius: 19,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   micDisabled: { backgroundColor: colors.ink4 },
-  micSoon: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.line, width: 64 },
+  // Voice-coming-soon placeholder kept 64-wide to fit "Coming soon"
+  // text, but explicit minHeight 44 + a11y role/label so it isn't
+  // mistaken for an active button.
+  micSoon: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: colors.line,
+    minHeight: 44,
+    paddingHorizontal: 8,
+  },
   micSoonText: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
   micIcon: { color: colors.paper, fontSize: 18, fontWeight: '700' },
 });

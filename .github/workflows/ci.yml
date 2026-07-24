@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
       - name: TypeScript (tsc --noEmit)
         run: npm run typecheck
 
@@ -45,3 +48,108 @@ jobs:
       - name: Expo Doctor (best-effort)
         run: npx expo install --check || true
         continue-on-error: true
+
+  # Web bundle gate: catches runtime-only errors that typecheck/lint/test
+  # miss — e.g. react vs react-dom version mismatch (audit C4), missing
+  # platform polyfills, broken Metro transforms. Cheap (no Lint/Test
+  # re-run; shares the node_modules cache).
+  web-bundle:
+    name: Expo web export
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: quality
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Build the web bundle. Failing here means the web build is broken
+      # even if typecheck/lint pass — the most common cause in this repo
+      # has been react/react-dom version drift between dependabot bumps.
+      - name: Export web bundle
+        run: npx expo export --platform web --output-dir dist
+
+      # Enforce a 2× ceiling over the 912 KiB baseline. This catches large
+      # regressions while leaving room for expected product growth.
+      - name: Enforce and report bundle size
+        run: |
+          SIZE=$(du -ck dist/_expo/static/js/web/*.js | tail -1 | cut -f1)
+          BUDGET_KB=1824
+          echo "Web bundle: ${SIZE} KiB (budget: ${BUDGET_KB} KiB)"
+          echo "## Web bundle size" >> "$GITHUB_STEP_SUMMARY"
+          echo "${SIZE} KiB / ${BUDGET_KB} KiB budget" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$SIZE" -gt "$BUDGET_KB" ]; then
+            echo "Web bundle exceeds the ${BUDGET_KB} KiB budget"
+            exit 1
+          fi
+
+  # Native config validation: runs `expo prebuild` for both iOS and Android
+  # without installing CocoaPods or Gradle dependencies. Catches bad
+  # app.json (Info.plist keys, package name, permissions) before the
+  # user-facing TestFlight or Play Console upload does. Plans/05 P0-7
+  # caught that we never validated prebuild output in CI; a typo in
+  # app.json would only surface when an actual iOS / Android build was
+  # triggered, by which point the user is waiting on TestFlight.
+  prebuild:
+    name: Validate native config (prebuild dry-run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    needs: quality
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # expo prebuild --no-install skips `pod install` and Gradle sync.
+      # We only need the generated Info.plist + AndroidManifest.xml paths
+      # to exist, so the App Store / Play Console won't reject the upload.
+      - name: iOS prebuild dry-run
+        run: npx expo prebuild --no-install --clean --platform ios
+
+      - name: Verify iOS Info.plist sanity
+        run: |
+          if [ ! -f ios/Fernly/Info.plist ]; then
+            echo "ios/Fernly/Info.plist missing — prebuild failed silently"
+            exit 1
+          fi
+          # Plans/05 P0-7: declared-but-unused permissions (mic, speech)
+          # are a privacy-nutrition-label red flag and an App Store review
+          # blocker. v0.9 removed them; keep them out unless voice mode
+          # ships.
+          if grep -q 'NSMicrophoneUsageDescription\|NSSpeechRecognitionUsageDescription' ios/Fernly/Info.plist; then
+            echo "Unexpected mic/speech entitlements in Info.plist"
+            exit 1
+          fi
+
+      - name: Android prebuild dry-run
+        run: npx expo prebuild --no-install --clean --platform android
+
+      - name: Verify Android manifest sanity
+        run: |
+          if [ ! -f android/app/src/main/AndroidManifest.xml ]; then
+            echo "AndroidManifest.xml missing — prebuild failed silently"
+            exit 1
+          fi
+          # v0.9: RECORD_AUDIO removed. Privacy-nutrition-label requirement.
+          if grep -q 'RECORD_AUDIO' android/app/src/main/AndroidManifest.xml; then
+            echo "Unexpected RECORD_AUDIO permission in AndroidManifest.xml"
+            exit 1
+          fi

@@ -1,5 +1,18 @@
 // Design tokens — Fernly pastel system
 // Mirrors the values in fernly-spec/index.html
+//
+// v0.7: text tokens darkened for WCAG 2.1 AA-body compliance.
+// Prior textMuted (#7A7390) was 4.0–4.3:1 on pastel card backgrounds —
+// failed AA-body (4.5:1) for any text <18pt regular / <14pt bold.
+// New textMuted (#5A5470) clears 4.5:1 on every pastel Card background.
+//
+// ink4 is now text-decoration-only. Any text rendered in ink4 was
+// failing 1.93:1; we use colors.line for decoration and
+// colors.textMuted for any non-headline text.
+//
+// warn is unchanged. The CrisisModal primary CTA (paper on warn) is
+// 3.25:1; the architectural fix is to use the new warnDeep semantic
+// token for crisis CTAs, keeping warn for non-text decorative use.
 
 export const colors = {
   // Pastel palette
@@ -26,7 +39,12 @@ export const colors = {
   // Neutrals
   ink: '#2A2438',
   ink2: '#4A4360',
-  ink3: '#7A7390',
+  // ink3 was #7A7390 — kept as an alias for ink2 since the new textMuted
+  // is darker. Existing references to ink3 in non-text decoration
+  // (like the old crisis modal matched-phrase line, since removed) are
+  // safe.
+  ink3: '#5A5470',
+  // ink4 retained as decoration-only. Do not render text in ink4.
   ink4: '#B8B3C9',
   paper: '#FBF9F6',
   paper2: '#FFFFFF',
@@ -36,11 +54,24 @@ export const colors = {
   bg: '#FBF9F6',
   text: '#2A2438',
   textSoft: '#4A4360',
-  textMuted: '#7A7390',
+  // textMuted darkened from #7A7390 to #5A5470. Passes AA-body (≥4.5:1)
+  // on every pastel card background. Use for any secondary text under 18pt.
+  textMuted: '#5A5470',
   accent: '#9B7DD4',
   accentSoft: '#E8E1F5',
   warn: '#E55D75',
+  // warnDeep is a deeper rose used for crisis CTA backgrounds so the
+  // paper foreground clears AA-body. CrisisModal uses warnDeep as the
+  // primary button background; warn stays for accents/decoration.
+  warnDeep: '#C92A4A',
   success: '#8FDDB4',
+  // v0.8 (F-P2-2): scrim is a dark, semi-transparent overlay used behind
+  // modals (CrisisModal's backdrop). Defined here so the dim layer routes
+  // through the theme contract instead of inlining rgba in component
+  // styles. RGB matches `ink` (#2A2438) at 85% alpha — chosen for the
+  // same dark-on-pastel calm that the CrisisModal needs to signal
+  // "stop and read this".
+  scrim: 'rgba(42, 36, 56, 0.85)',
 } as const;
 
 export const space = {
@@ -64,6 +95,19 @@ export const radius = {
 } as const;
 
 // Typography — use system fonts as fallbacks for body, Inter via @expo-google-fonts later
+// Font tokens. v0.9 keeps the prior System-default family stack on
+// purpose — Inter / Nunito / DM Mono ship in v1+ per plans/05 F-P2-9.
+//
+// Why not ship the spec fonts today: loading @expo-google-fonts +
+// the bundled Inter/Nunito ttf files is a +~80KB web-bundle hit
+// plus an asset-download-on-cold-start on iOS/Android. With no
+// real-device visual review possible in this arc, that bundle
+// cost lands without verification.
+//
+// When the v1 fonts ship, this is the only place the change must
+// land (one-line swap of `'System'` for `'Inter' as string`) and
+// the screens automatically match spec/index.html because they
+// read tokens here.
 export const font = {
   display: 'System',
   body: 'System',

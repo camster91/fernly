@@ -20,6 +20,14 @@ export interface UserProfile {
   goals: Goal[];
   onboarded: boolean;
   createdAt: string;
+  /**
+   * Optional: the mood the user picked during onboarding step 2.
+   * TodayScreen uses this for a one-time greeting ("You said you were
+   * feeling X when you signed up — let's see how today goes") instead
+   * of asking again. Persisted so a Reset + re-onboarding starts
+   * fresh. Plans/05 P1-15.
+   */
+  initialMood?: MoodScore;
 }
 
 export interface MoodEntry {
@@ -27,14 +35,6 @@ export interface MoodEntry {
   score: MoodScore;
   word?: string; // optional one-word tag
   note?: string;
-}
-
-export interface ExerciseSession {
-  id: string;
-  exerciseId: string;
-  startedAt: string;
-  completedAt?: string;
-  data?: Record<string, unknown>; // exercise-specific input
 }
 
 export interface ChatMessage {

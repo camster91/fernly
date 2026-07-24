@@ -8,7 +8,9 @@ import { MoodPicker, moodLabel } from '../components/MoodPicker';
 import { Card } from '../components/Card';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
+import { localDateString } from '../util/date';
 import type { MoodScore, MoodEntry } from '../types';
+import { greetingForHour } from './TodayScreen';
 
 const QUICK_WORDS = [
   'tired',
@@ -28,8 +30,11 @@ export function MoodCheckInScreen() {
 
   async function save() {
     if (!score) return;
+    // v0.9: store the user's local-date string, not UTC. A PST user
+    // saving at 11pm local would otherwise file under tomorrow's date
+    // and break streak math / chart alignment. See plans/05 P1-14.
     const entry: MoodEntry = {
-      date: new Date().toISOString().slice(0, 10),
+      date: localDateString(),
       score,
       word,
     };
@@ -52,7 +57,9 @@ export function MoodCheckInScreen() {
   return (
     <ScreenContainer>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>MORNING CHECK-IN</Text>
+        <Text style={styles.eyebrow}>
+          {greetingForHour(new Date().getHours()).toUpperCase()} CHECK-IN
+        </Text>
         <Text style={styles.title}>How are you, really?</Text>
         <Text style={styles.sub}>No wrong answer. No streak loss. Just noticing.</Text>
       </View>
@@ -75,6 +82,10 @@ export function MoodCheckInScreen() {
             <Pressable
               key={w}
               onPress={() => setWord(w === word ? undefined : w)}
+              accessibilityRole="button"
+              accessibilityLabel={w}
+              accessibilityState={{ selected: word === w }}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
               style={[styles.wordPill, word === w && styles.wordPillActive]}
             >
               <Text style={[styles.wordText, word === w && styles.wordTextActive]}>{w}</Text>
@@ -86,6 +97,9 @@ export function MoodCheckInScreen() {
       <Pressable
         onPress={save}
         disabled={!score}
+        accessibilityRole="button"
+        accessibilityLabel={score ? 'Save mood check-in' : 'Pick a mood first'}
+        accessibilityState={{ disabled: !score }}
         style={({ pressed }) => [
           styles.cta,
           !score && styles.ctaDisabled,

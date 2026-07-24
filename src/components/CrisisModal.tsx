@@ -11,7 +11,16 @@
 //   - Dismiss requires a 1.5s long-press with visible progress bar.
 import React, { useEffect, useRef, useState } from 'react';
 import { getLocales } from 'expo-localization';
-import { Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { colors, type as t, radius } from '../theme';
 import { crisisResourcesFor, lastVerifiedAt } from '../safety/crisis';
 
@@ -19,6 +28,13 @@ interface Props {
   visible: boolean;
   /** Optional override. When omitted, derived from device locale via expo-localization. */
   locale?: string;
+  /**
+   * @deprecated v0.7: no longer rendered. Surfacing the user's matched
+   * crisis phrasing back at them was a clinical-UX re-traumatization
+   * risk and a screen-reader pitfall (see PR3 P0 #8). Kept in the
+   * Props type to avoid breaking the ChatScreen call site; will be
+   * removed in v1.
+   */
   matchedPhrase?: string;
   onDismiss: () => void;
 }
@@ -31,8 +47,15 @@ const REACHABILITY_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 const DISMISS_LONGPRESS_MS = 1500;
 
 /** Pick the best locale for crisis resources from the device's preferred
- * locales. The crisis module recognises en-US, en-GB, es, fr, pt, de. */
-function pickLocale(): string {
+ * locales. The crisis module recognises en-US, en-GB, es, fr, pt, de.
+ *
+ * v0.9: cached at module load via `MEMOIZED_PICKED_LOCALE` so every
+ * CrisisModal render doesn't re-call `getLocales()`. On Render the
+ * language detection is a single constant lookup. The `locale` prop
+ * still wins when the caller passes it explicitly (testing, i18n
+ * override).
+ * See plans/05 P1-4 / P1-11. */
+const MEMOIZED_PICKED_LOCALE = (() => {
   try {
     const locales = getLocales();
     for (const l of locales) {
@@ -43,9 +66,10 @@ function pickLocale(): string {
     // expo-localization failed to load — fall through to default
   }
   return 'en-US';
-}
+})();
+const pickLocale = () => MEMOIZED_PICKED_LOCALE;
 
-export function CrisisModal({ visible, locale, matchedPhrase, onDismiss }: Props) {
+export function CrisisModal({ visible, locale, matchedPhrase: _matchedPhrase, onDismiss }: Props) {
   // If the caller didn't pass a locale, derive from the device prefs.
   // Pinned at mount — we don't re-render on OS locale changes mid-modal.
   const effectiveLocale = locale ?? pickLocale();
@@ -58,7 +82,9 @@ export function CrisisModal({ visible, locale, matchedPhrase, onDismiss }: Props
   const [holdProgress, setHoldProgress] = useState(0);
   const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Decide banner state on mount/visibility change.
+  // Decide banner state on mount/visibility change. Also announce the
+  // modal opening to VoiceOver/TalkBack so screen-reader users don't
+  // have to swipe to discover it.
   useEffect(() => {
     if (!visible) {
       setOpenError(null);
@@ -74,6 +100,23 @@ export function CrisisModal({ visible, locale, matchedPhrase, onDismiss }: Props
       return v !== null && now - v < REACHABILITY_STALE_MS;
     });
     setUnreachableBanner(!hasFresh);
+
+    // Screen-reader announcement. Only fire once per modal open —
+    // visibility-driven re-runs (e.g. parent re-renders) shouldn't
+    // re-announce. We use the cleanup to noop; if visible flips false
+    // and back true, the announcement fires again which is what we want.
+    AccessibilityInfo.announceForAccessibility(
+      'Safety resources. Choose a helpline below, or hold the bottom button for one and a half seconds to return to chat.',
+    );
+
+    // v0.8: unmount cleanup. Without this, if the component unmounts
+    // mid-press (route pop, parent re-render swap), holdTimerRef
+    // keeps running and fires setState on an unmounted component for
+    // up to 1.5s. The visible===false branch above only catches the
+    // normal dismiss flow; this catches the unmount path too.
+    return () => {
+      if (holdTimerRef.current) clearInterval(holdTimerRef.current);
+    };
   }, [visible, resources]);
 
   function startHold() {
@@ -137,7 +180,16 @@ export function CrisisModal({ visible, locale, matchedPhrase, onDismiss }: Props
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      // accessibilityViewIsModal traps screen-reader focus inside the
+      // modal so TalkBack swipe (Android) and VoiceOver swipe (iOS)
+      // cannot escape to the underlying chat without dismissing. The
+      // user MUST complete the long-press on the dismiss button.
+      accessibilityViewIsModal={true}
+    >
       {/* No onRequestClose — Android back / iOS swipe-down cannot dismiss.
           The user MUST complete the long-press on the dismiss button. */}
       <View style={styles.backdrop}>
@@ -155,7 +207,13 @@ export function CrisisModal({ visible, locale, matchedPhrase, onDismiss }: Props
           </Text>
 
           {unreachableBanner && (
-            <View style={styles.banner}>
+            <View
+              style={styles.banner}
+              accessible={true}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="assertive"
+              accessibilityLabel="Warning: helpline resources may be temporarily unavailable on this device. If a button fails, try another."
+            >
               <Text style={styles.bannerText}>
                 ⚠️ Resources may be temporarily unavailable on this device. If a button fails, try
                 another.
@@ -164,47 +222,96 @@ export function CrisisModal({ visible, locale, matchedPhrase, onDismiss }: Props
           )}
 
           {openError && (
-            <View style={styles.errorBanner}>
+            <View
+              style={styles.errorBanner}
+              accessible={true}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="assertive"
+            >
               <Text style={styles.errorText}>{openError}</Text>
             </View>
           )}
 
           <View style={styles.resources}>
-            {resources.map((r, i) => (
-              <Pressable
-                key={i}
-                onPress={() => open(r)}
-                style={({ pressed }) => [
-                  styles.resourceBtn,
-                  i === 0 && styles.resourceBtnPrimary,
-                  pressed && { opacity: 0.8 },
-                ]}
-              >
-                <Text style={[styles.resourceText, i === 0 && styles.resourceTextPrimary]}>
-                  {r.name}
-                </Text>
-                {(r.phone || r.text) && (
-                  <Text style={[styles.resourceSub, i === 0 && { color: colors.paper }]}>
-                    {r.phone ? `Call ${r.phone}` : `Text ${r.text}`}
+            {resources.map((r, i) => {
+              // Compose a label that distinguishes phone/text/url resources
+              // for screen readers. The visible text alone ("988 Suicide &
+              // Crisis Lifeline (US)") is ambiguous when announced.
+              const action = r.phone
+                ? `Call ${r.phone}`
+                : r.text
+                  ? `Text ${r.text}`
+                  : r.url
+                    ? `Visit ${r.url}`
+                    : '';
+              return (
+                <Pressable
+                  key={i}
+                  onPress={() => open(r)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${r.name}. ${action}`}
+                  accessibilityHint={
+                    r.phone
+                      ? 'Opens your phone app to dial this number.'
+                      : r.text
+                        ? 'Opens your messaging app to send a text.'
+                        : 'Opens in your browser.'
+                  }
+                  hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+                  style={({ pressed }) => [
+                    styles.resourceBtn,
+                    i === 0 && styles.resourceBtnPrimary,
+                    pressed && { opacity: 0.8 },
+                  ]}
+                >
+                  <Text style={[styles.resourceText, i === 0 && styles.resourceTextPrimary]}>
+                    {r.name}
                   </Text>
-                )}
-              </Pressable>
-            ))}
+                  {(r.phone || r.text) && (
+                    <Text style={[styles.resourceSub, i === 0 && { color: colors.paper }]}>
+                      {r.phone ? `Call ${r.phone}` : `Text ${r.text}`}
+                    </Text>
+                  )}
+                </Pressable>
+              );
+            })}
           </View>
 
           {/* Long-press dismiss — single tap cannot close the modal. */}
-          <Pressable onPressIn={startHold} onPressOut={cancelHold} style={styles.close}>
-            <Text style={styles.closeText}>
+          <Pressable
+            onPressIn={startHold}
+            onPressOut={cancelHold}
+            accessibilityRole="button"
+            accessibilityLabel="Hold for one and a half seconds to close this safety message and return to chat"
+            accessibilityState={{ busy: pressing }}
+            accessibilityValue={{
+              min: 0,
+              max: 100,
+              now: Math.round(holdProgress),
+            }}
+            style={styles.close}
+          >
+            <Text style={styles.closeText} accessibilityLiveRegion="polite">
               {pressing
                 ? `Keep holding… ${Math.round(DISMISS_LONGPRESS_MS / 1000 - (holdProgress / 100) * (DISMISS_LONGPRESS_MS / 1000))}s`
                 : "Hold to confirm you're safe for now"}
             </Text>
             <View style={styles.holdTrack}>
               <View style={[styles.holdFill, { width: `${holdProgress}%` }]} />
+              {/* 50% and 100% tick marks — non-color-only progress signal */}
+              <View style={[styles.holdTick, { left: '50%' }]} />
+              <View style={[styles.holdTick, { right: 0 }]} />
             </View>
           </Pressable>
 
-          {matchedPhrase && <Text style={styles.matched}>— triggered by: "{matchedPhrase}" —</Text>}
+          {/*
+            Matched-phrase debug line REMOVED in v0.7 (was P0 a11y #8).
+            Surfacing the user's exact crisis phrasing back to them in a
+            10pt, 1.93:1 contrast label was a re-traumatization risk per
+            clinical crisis UX literature, and a screen-reader pitfall
+            (no role, no label, near-illegible contrast). Dev-only opt-in
+            could be added later behind a feature flag; for v0 we drop it.
+          */}
         </View>
       </View>
     </Modal>
@@ -214,7 +321,7 @@ export function CrisisModal({ visible, locale, matchedPhrase, onDismiss }: Props
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(42, 36, 56, 0.85)',
+    backgroundColor: colors.scrim,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
@@ -276,29 +383,61 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
     alignItems: 'center',
+    // WCAG 2.5.5: minimum 44pt tap target. With 14px vertical padding
+    // plus a 14pt text line, the natural height is ~46pt — add an
+    // explicit minHeight as a belt-and-suspenders guarantee against
+    // font scaling pushing the height below threshold.
+    minHeight: 56,
   },
-  resourceBtnPrimary: { backgroundColor: colors.warn, borderColor: colors.warn },
+  // v0.8: use warnDeep (#C92A4A) — paper foreground on warnDeep measures
+  // ~5.0:1, clears WCAG AA-body 4.5:1. The previous warn (#E55D75) was
+  // 3.25:1 — failed AA. The architectural fix was supposed to ship in
+  // PR UX3 (theme.ts added warnDeep) but the CrisisModal never switched
+  // over. See plans/05-full-codebase-review-2026-07-22.md P0-3.
+  resourceBtnPrimary: { backgroundColor: colors.warnDeep, borderColor: colors.warnDeep },
   resourceText: { fontWeight: '700', fontSize: 14, color: colors.text },
+  // Primary CTA foreground was colors.paper on colors.warn (3.25:1, fails
+  // AA-body 4.5:1). Switch to white on a slightly darker warn shade so
+  // the most-tapped button in crisis is readable in any lighting. Theme
+  // token change cascades here — see PR4 for theme.ts update.
+  // Primary CTA foreground was colors.paper on colors.warn (3.25:1, fails
+  // AA-body 4.5:1). The architectural fix is in PR4 (theme.ts: darken
+  // colors.warn to a deeper rose, then this foreground will read ≥4.6:1
+  // on the new background). For now we keep colors.paper and rely on
+  // the 56pt minHeight + hitSlop on the button to compensate.
   resourceTextPrimary: { color: colors.paper },
-  resourceSub: { fontSize: 11, color: colors.textMuted, marginTop: 2, fontFamily: 'Menlo' },
+  resourceSub: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 2,
+    fontFamily: 'Menlo',
+  },
 
   close: { paddingVertical: 14, paddingHorizontal: 8, alignItems: 'center' },
-  closeText: { ...t.small, fontWeight: '700', color: colors.textMuted, marginBottom: 6 },
+  // closeText was colors.textMuted on paper = 4.27:1, fails AA-body.
+  // The dismiss affordance is the one that should be most clearly
+  // readable; bump to colors.text (14.2:1).
+  closeText: { ...t.small, fontWeight: '700', color: colors.text, marginBottom: 6 },
   holdTrack: {
     width: 120,
-    height: 4,
-    borderRadius: 2,
+    // Bumped from 4pt to 8pt — the prior 4pt track was visually
+    // invisible to low-vision users at 200% font scale, and the
+    // progress indicator is the only non-color signal of hold state.
+    height: 8,
+    borderRadius: 4,
     backgroundColor: colors.line,
     overflow: 'hidden',
+    position: 'relative',
   },
   holdFill: { height: '100%', backgroundColor: colors.warn },
-
-  matched: {
-    fontSize: 10,
-    color: colors.ink4,
-    fontFamily: 'Menlo',
-    textAlign: 'center',
-    marginTop: 12,
-    letterSpacing: 0.5,
+  // Tick marks at 50% and 100% give non-color-only feedback for
+  // users who can't perceive the progress fill (color-blind, very
+  // low vision). Rendered as a thin overlay on the track.
+  holdTick: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 2,
+    backgroundColor: colors.text,
   },
 });
