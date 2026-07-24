@@ -51,6 +51,7 @@ cat eas.json
 ```
 
 Expected structure:
+
 ```json
 {
   "build": {
