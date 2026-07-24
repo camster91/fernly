@@ -195,3 +195,184 @@ describe('crisis modal: unknown / malformed locale fallback (regression)', () =>
     expect(resources.some((r) => r.phone || r.text || r.url)).toBe(true);
   });
 });
+
+// === v0.2 regression corpus — ported from scripts/test-crisis.mjs.
+// The original mjs file is unrunnable under Node 20+ (esbuild +
+// react-native/index.js "Unexpected typeof" parse error). The
+// cases below are equivalent to the mjs assertions. Plans/05
+// P1-2 / F-P1-2.
+
+describe('crisis detector: v0 hard patterns (regression)', () => {
+  it.each([
+    'I want to die',
+    'I want to kill myself',
+    "I don't want to live",
+    "I don't want to be alive",
+    "I don't want to exist",
+    'going to kill myself tomorrow',
+    "I'm suicidal",
+    'overdose',
+    'cut myself',
+    'hurt myself',
+    "I can't go on",
+    "I can't do this anymore",
+  ])('"%s" must be hard', (input) => {
+    expect(detectCrisis(input).level).toBe('hard');
+  });
+});
+
+describe('crisis detector: v0 soft patterns (regression)', () => {
+  it.each(['I want to give up', 'no point', "what's the point", 'empty inside'])(
+    '"%s" must be soft',
+    (input) => {
+      expect(detectCrisis(input).level).toBe('soft');
+    },
+  );
+});
+
+describe('crisis detector: v0 false-positive guards (regression)', () => {
+  it.each([
+    'I killed it',
+    'dying of laughter',
+    'want to die laughing',
+    'school is killing me',
+    'this is killing me',
+    'my job is killing me',
+    'dying of embarrassment',
+  ])('"%s" must be none', (input) => {
+    expect(detectCrisis(input).level).toBe('none');
+  });
+});
+
+describe('crisis detector: clean text (regression)', () => {
+  it.each(['hi', 'how are you', "I'm sad today", "I'm anxious about tomorrow", 'today was hard'])(
+    '"%s" must be none',
+    (input) => {
+      expect(detectCrisis(input).level).toBe('none');
+    },
+  );
+  it('empty string must be none', () => {
+    expect(detectCrisis('').level).toBe('none');
+  });
+  it('whitespace must be none', () => {
+    expect(detectCrisis('   ').level).toBe('none');
+  });
+});
+
+describe('crisis detector: zero-width joiner bypass (regression)', () => {
+  const zwj = 'k\u200bi\u200bl\u200bl\u200b m\u200by\u200bs\u200be\u200bl\u200bf';
+  it('ZWJ-spaced "kill myself" must be hard', () => {
+    expect(detectCrisis(zwj).level).toBe('hard');
+  });
+  it('partial ZWJ "k\u200bill my\u200bself" must be hard', () => {
+    expect(detectCrisis('k\u200bill my\u200bself').level).toBe('hard');
+  });
+});
+
+describe('crisis detector: letter-spacing bypass (regression)', () => {
+  it.each(['k i l l   m y s e l f', 's u i c i d e'])('"%s" must be hard', (input) => {
+    expect(detectCrisis(input).level).toBe('hard');
+  });
+});
+
+describe('crisis detector: leetspeak bypass (regression)', () => {
+  it.each(['k1ll mys3lf', 'su1c1d3', '0v3rd0s3'])('"%s" must be hard', (input) => {
+    expect(detectCrisis(input).level).toBe('hard');
+  });
+});
+
+describe('crisis detector: gen-z shorthand (regression)', () => {
+  it.each(['kms rn', 'kys', 'kms lol', 'unalive myself', 'i wanna unalive', 'permadeath'])(
+    '"%s" must be hard',
+    (input) => {
+      expect(detectCrisis(input).level).toBe('hard');
+    },
+  );
+});
+
+describe('crisis detector: euphemistic ideation (regression)', () => {
+  it.each([
+    'end it',
+    'end my pain',
+    'better off dead',
+    'permanent solution',
+    "i'm tired of being alive",
+    'no reason to live',
+    "can't keep going",
+  ])('"%s" must be hard', (input) => {
+    expect(detectCrisis(input).level).toBe('hard');
+  });
+});
+
+describe('crisis detector: method mentions (regression)', () => {
+  it.each(['self harm', 'jumping off a bridge', 'i have a plan to end it'])(
+    '"%s" must be hard',
+    (input) => {
+      expect(detectCrisis(input).level).toBe('hard');
+    },
+  );
+});
+
+describe('crisis detector: Spanish (regression)', () => {
+  it.each(['me quiero morir', 'quiero suicidarme', 'no quiero vivir', 'estoy harto de vivir'])(
+    '"%s" must be hard',
+    (input) => {
+      expect(detectCrisis(input).level).toBe('hard');
+    },
+  );
+});
+
+describe('crisis detector: French (regression)', () => {
+  it.each(['je veux mourir', "je n'en peux plus", 'plus envie de vivre'])(
+    '"%s" must be hard',
+    (input) => {
+      expect(detectCrisis(input).level).toBe('hard');
+    },
+  );
+});
+
+describe('crisis detector: Portuguese (regression)', () => {
+  it.each(['quero morrer', 'não quero viver'])('"%s" must be hard', (input) => {
+    expect(detectCrisis(input).level).toBe('hard');
+  });
+});
+
+describe('crisis modal: resource routing by locale', () => {
+  it('US primary phone is 988', () => {
+    expect(crisisResourcesFor('en-US')[0].phone).toBe('988');
+  });
+  it('US has HOME to 741741 text line', () => {
+    expect(crisisResourcesFor('en-US').some((r) => r.text === 'HOME to 741741')).toBe(true);
+  });
+  it('UK primary phone is 116 123', () => {
+    expect(crisisResourcesFor('en-GB')[0].phone).toBe('116 123');
+  });
+  it('es-MX has resources including an 800-prefix line', () => {
+    const r = crisisResourcesFor('es-MX');
+    expect(r.length).toBeGreaterThan(0);
+    expect(r.some((x) => (x.phone || '').includes('800'))).toBe(true);
+  });
+  it('fr-FR primary phone is 3114', () => {
+    expect(crisisResourcesFor('fr-FR')[0].phone).toBe('3114');
+  });
+  it('pt-BR primary phone is 188', () => {
+    expect(crisisResourcesFor('pt-BR')[0].phone).toBe('188');
+  });
+  it('de-DE primary phone starts with 0800', () => {
+    expect(crisisResourcesFor('de-DE')[0].phone?.startsWith('0800')).toBe(true);
+  });
+  it('unknown locale returns IASP fallback', () => {
+    const r = crisisResourcesFor('xx-XX');
+    expect(r.length).toBeGreaterThan(0);
+    expect(r[0].url?.includes('iasp.info')).toBe(true);
+  });
+});
+
+describe('crisis detector: matchedPhrase reporting (regression)', () => {
+  it('populated for kms rn', () => {
+    expect((detectCrisis('kms rn').matchedPhrase?.length ?? 0) > 0).toBe(true);
+  });
+  it('absent for clean text', () => {
+    expect(detectCrisis('hi').matchedPhrase).toBeUndefined();
+  });
+});
