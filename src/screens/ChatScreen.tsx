@@ -32,6 +32,7 @@ import { storage } from '../storage';
 import { detectCrisis } from '../safety/crisis';
 import { MASCOT_EMOJI, MASCOT_EMOJI_FALLBACK } from '../data/mascots';
 import type { ChatMessage, ChatSession, CrisisAuditEntry, UserProfile, Tone } from '../types';
+import { fetchReply, readChatBackendUrl } from '../api/chat';
 
 const MAX_INPUT_LENGTH = 4000;
 
@@ -237,13 +238,32 @@ export function ChatScreen() {
         storage.appendCrisisAudit(softAudit).catch(() => undefined);
       }
 
-      // v0 mock path — synchronous, no LLM fetch yet. When the LLM
-      // ships, this is where the AbortController + fetch() wire in.
+      // v0.9 (F-P0-3): real backend when EXPO_PUBLIC_CHAT_API_URL is set;
+      // mockReply() otherwise. The backend wiring is in src/api/chat.ts
+      // and follows the standard { reply: string } shape. Without the
+      // env var, this branch falls back to the deterministic mock so
+      // v0 keeps working offline. Plans/05 P0-3.
       const tone = profile?.tone ?? 'soft';
+      const backendUrl = readChatBackendUrl();
+      let replyText: string;
+      if (backendUrl) {
+        const abort = new AbortController();
+        // The chat-screen's unmount effect can't see this controller;
+        // we rely on the send() promise resolution + the request's own
+        // 12s timeout. Future work: wire to isCancelledRef.
+        const result = await fetchReply(
+          { input: text, tone, sessionId },
+          { url: backendUrl },
+          abort.signal,
+        );
+        replyText = result.reply;
+      } else {
+        replyText = mockReply(text, tone);
+      }
       const replyMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'fernly',
-        text: mockReply(text, tone),
+        text: replyText,
         at: new Date().toISOString(),
       };
       const afterUser = await storage.appendMessageToSession(sessionId, userMsg);
