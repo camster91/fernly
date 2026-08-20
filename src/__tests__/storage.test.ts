@@ -274,6 +274,129 @@ describe('safe reads (issue #79)', () => {
   });
 });
 
+// v0.10 (issue #52): the index-walking enumerator and the strict
+// write APIs. The previous behavior collapsed multi-session installs
+// into a single-session count (the legacy getChats() returned [] for
+// v0.3+ users) and silently swallowed save failures, letting the
+// onboarding screen mark the user "complete" without a successful
+// write. These tests pin the new behavior.
+describe('strict writes and session enumeration (issue #52)', () => {
+  const PROFILE_KEY = '@fernly/profile';
+
+  it('setProfileStrict throws on AsyncStorage failure', async () => {
+    asyncStorage.setItem.mockRejectedValueOnce(new Error('quota exceeded'));
+    await expect(
+      storage.setProfileStrict({
+        name: 'x',
+        mascot: 'moon',
+        tone: 'soft',
+        goals: [],
+        onboarded: true,
+        createdAt: '2026-07-21T12:00:00.000Z',
+      }),
+    ).rejects.toThrow('quota exceeded');
+  });
+
+  it('addMoodStrict throws on AsyncStorage failure', async () => {
+    asyncStorage.getItem.mockResolvedValueOnce(JSON.stringify([]));
+    asyncStorage.setItem.mockRejectedValueOnce(new Error('disk full'));
+    await expect(
+      storage.addMoodStrict({ date: '2026-07-21', score: 4 }),
+    ).rejects.toThrow('disk full');
+  });
+
+  it('setOnboardedStrict throws on AsyncStorage failure', async () => {
+    asyncStorage.setItem.mockRejectedValueOnce(new Error('readonly'));
+    await expect(storage.setOnboardedStrict(true)).rejects.toThrow('readonly');
+  });
+
+  it('getAllChatSessions returns every current session sorted newest-first', async () => {
+    const old = { ...session('old-1'), startedAt: '2026-07-01T00:00:00.000Z' };
+    const mid = { ...session('mid-2'), startedAt: '2026-07-15T00:00:00.000Z' };
+    const fresh = { ...session('fresh-3'), startedAt: '2026-07-21T00:00:00.000Z' };
+    await storage.setChatSession(old);
+    await storage.setChatSession(mid);
+    await storage.setChatSession(fresh);
+
+    const { sessions, unreadable } = await storage.getAllChatSessions();
+
+    expect(unreadable).toEqual([]);
+    expect(sessions.map((s) => s.id)).toEqual(['fresh-3', 'mid-2', 'old-1']);
+  });
+
+  it('getAllChatSessions reports partial-failure keys without blocking the rest', async () => {
+    await storage.setChatSession(session('good-1'));
+    // Force a per-session read failure by stuffing a malformed value
+    // under a second key. The walker uses Promise.allSettled so a
+    // single failure is reported, not propagated.
+    secureData.set(sessionKey('broken-2'), '{not json');
+    await storage.setChatSession({ id: 'broken-2', startedAt: 'x', version: 1, messages: [] });
+    // The second setChatSession overwrote the malformed value, so we
+    // re-inject the malformed blob AFTER the write — this simulates a
+    // session that was written then corrupted in the keychain.
+    secureData.set(sessionKey('broken-2'), '{not json');
+    await storage.setChatSession(session('good-3'));
+
+    const { sessions, unreadable } = await storage.getAllChatSessions();
+
+    expect(sessions.map((s) => s.id).sort()).toEqual(['good-1', 'good-3']);
+    expect(unreadable).toContain(sessionKey('broken-2'));
+  });
+
+  it('getAllChatSessions migrates the legacy single-blob into per-session entries', async () => {
+    const legacy = [
+      { ...session('legacy-a'), startedAt: '2026-06-01T00:00:00.000Z' },
+      { ...session('legacy-b'), startedAt: '2026-06-15T00:00:00.000Z' },
+    ];
+    secureData.set(LEGACY_CHATS, JSON.stringify(legacy));
+
+    const { sessions, unreadable } = await storage.getAllChatSessions();
+
+    expect(unreadable).toEqual([]);
+    // The legacy blob is migrated into per-session keys and then
+    // deleted. The enumerator should see both migrated sessions.
+    expect(sessions.map((s) => s.id).sort()).toEqual(['legacy-a', 'legacy-b']);
+    // Legacy blob is gone after migration.
+    expect(secureData.has(LEGACY_CHATS)).toBe(false);
+  });
+
+  it('clearAll returns a result enumerating successful and failed deletes', async () => {
+    const a = await storage.createChatSession([message('a')]);
+    const b = await storage.createChatSession([message('b')]);
+
+    // Make one of the session deletes fail so we can verify the
+    // result distinguishes per-key outcomes.
+    const realDelete = secureStore.deleteItemAsync.getMockImplementation();
+    let callIndex = 0;
+    secureStore.deleteItemAsync.mockImplementation(async (k: string) => {
+      callIndex += 1;
+      if (k === sessionKey(b.id)) {
+        throw new Error('keychain locked');
+      }
+      return realDelete?.(k) ?? undefined;
+    });
+
+    const result = await storage.clearAll();
+
+    expect(result.auditRetained).toBe(true);
+    expect(result.legacyDeleted).toBe(true);
+    // a deleted, b failed.
+    expect(result.sessionsFailed).toContain(sessionKey(b.id));
+    expect(result.sessionsFailed).not.toContain(sessionKey(a.id));
+  });
+
+  it('clearAll drops the session key index and AsyncStorage keys', async () => {
+    await storage.createChatSession([message('one')]);
+    asyncData.set(PROFILE_KEY, JSON.stringify({ name: 'x' }));
+
+    const result = await storage.clearAll();
+
+    expect(result.indexRemoved).toBe(true);
+    expect(asyncData.has(PROFILE_KEY)).toBe(false);
+    expect(asyncData.has(SESSION_INDEX)).toBe(false);
+  });
+});
+
 describe('legacy blob migration', () => {
   it('migrates valid legacy sessions, deletes legacy blob, and indexes new keys', async () => {
     const old = [session('legacy-a'), session('legacy-b')];

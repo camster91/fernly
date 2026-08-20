@@ -39,16 +39,23 @@ export function MoodCheckInScreen() {
       word,
     };
     try {
-      await storage.addMood(entry);
+      // v0.10 (issue #52): use the strict variant so a write failure
+      // is not silently swallowed. The legacy addMood() would catch
+      // and discard AsyncStorage errors, then nav.goBack() would
+      // close the screen as if the save succeeded — a silent
+      // data-loss path.
+      await storage.addMoodStrict(entry);
       nav.goBack();
-    } catch {
+    } catch (e) {
       // Storage layer failed (SecureStore/AsyncStorage unavailable,
       // disk full, etc.). Show the user a clear failure rather than
       // silently leaving them stuck on the screen with a disabled
       // Save button.
       Alert.alert(
         "Couldn't save your check-in",
-        'Please try again in a moment. If this keeps happening, try restarting the app.',
+        e instanceof Error
+          ? `Reason: ${e.message}. Please try again in a moment. If this keeps happening, try restarting the app.`
+          : 'Please try again in a moment. If this keeps happening, try restarting the app.',
         [{ text: 'OK' }],
       );
     }

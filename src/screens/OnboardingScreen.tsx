@@ -145,7 +145,11 @@ export function OnboardingScreen({ onDone }: Props) {
       initialMoodLabel: picked?.text,
     };
     try {
-      await storage.setProfile(profile);
+      // v0.10 (issue #52): use the strict variant so a write failure
+      // is not silently swallowed. The legacy setProfile() would
+      // catch and discard AsyncStorage errors, letting the parent
+      // route into the main tabs without a successful save.
+      await storage.setProfileStrict(profile);
       // Success: leave the saving flag set (we're about to unmount via
       // onDone) and call the parent's completion handler. The parent
       // navigates to the main tabs.

@@ -99,14 +99,32 @@ export function SettingsScreen({ navigation }: Props) {
   const exportData = useCallback(async () => {
     try {
       const moods = await storage.getMoods();
-      const chats = await storage.getChats();
+      // v0.10 (issue #52): use the index-walking enumerator so the
+      // export actually contains every chat session. Previously
+      // getChats() returned the legacy single-blob (and [] for
+      // v0.3+ installs) — so a v0.3+ user exporting their data
+      // got an empty chats array even though the session was sitting
+      // in their keychain.
+      const { sessions: chats, unreadable: unreadableChats } = await storage.getAllChatSessions();
       const session = await storage.getActiveSessionId();
       const profile = await storage.getProfile();
       // JSON export — the simplest portable format. Round-trip via
       // storage.import is out of v0 scope (import = a different
       // security audit, different risk model).
+      //
+      // v0.10 (issue #52): if any chat sessions failed to read, we
+      // include an `unreadableChats` field so the user knows the
+      // export is partial. Hiding the failure here would mean
+      // "Export your data" silently dropped entries.
       const json = JSON.stringify(
-        { profile, moods, chats, activeSessionId: session, exportedAt: new Date().toISOString() },
+        {
+          profile,
+          moods,
+          chats,
+          activeSessionId: session,
+          exportedAt: new Date().toISOString(),
+          ...(unreadableChats.length > 0 ? { unreadableChats } : {}),
+        },
         null,
         2,
       );
@@ -114,6 +132,12 @@ export function SettingsScreen({ navigation }: Props) {
         title: 'Fernly export',
         message: json,
       });
+      if (unreadableChats.length > 0) {
+        Alert.alert(
+          'Export was partial',
+          `${unreadableChats.length} chat session(s) couldn't be read and were not included. The export is in the share sheet.`,
+        );
+      }
     } catch (err) {
       Alert.alert(
         "Couldn't export",

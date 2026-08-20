@@ -257,7 +257,12 @@ export function RootNav() {
               // useState. Re-running the safe read is the safest
               // path: it surfaces any post-save storage error rather
               // than silently marking the user onboarded.
-              await storage.setOnboarded(true);
+              //
+              // v0.10 (issue #52): use the strict variant so a write
+              // failure is surfaced via the hydration error path
+              // instead of silently flipping the user into the main
+              // tabs.
+              await storage.setOnboardedStrict(true);
               const after = await storage.getProfileSafe();
               if (after.kind === 'ready') {
                 setHydration({ kind: 'ready', profile: after.profile });
