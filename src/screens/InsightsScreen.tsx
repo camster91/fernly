@@ -4,15 +4,22 @@ import React, { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Card, styles as cardStyles } from '../components/Card';
 import { colors, radius, space, type as t } from '../theme';
 import { storage } from '../storage';
 import { localDateString } from '../util/date';
 import type { MoodEntry } from '../types';
+import type { RootStackParamList } from '../nav/RootNav';
 
 export function InsightsScreen() {
-  const nav = useNavigation<any>();
+  // v0.10: typed navigation per issue #68. InsightsScreen was the only
+  // screen using `useNavigation<any>()`, which silently accepts any
+  // route name (and any params) at compile time. Switching to the typed
+  // `NativeStackNavigationProp<RootStackParamList>` makes invalid route
+  // names/params a typecheck error.
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [moods, setMoods] = useState<MoodEntry[]>([]);
 
   // v0.9: re-read on every focus so the chart reflects MoodCheckIn
@@ -97,7 +104,11 @@ export function InsightsScreen() {
     <ScreenContainer>
       <View style={styles.header}>
         <Text style={styles.eyebrow}>THIS WEEK</Text>
-        <Text style={styles.h1}>Your week</Text>
+        {/* v0.10 (issue #82): h1 carries header semantics for screen-reader
+            rotor navigation. */}
+        <Text style={styles.h1} accessibilityRole="header">
+          Your week
+        </Text>
       </View>
 
       <Card>

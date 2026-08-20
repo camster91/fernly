@@ -60,7 +60,10 @@ export function MoodCheckInScreen() {
         <Text style={styles.eyebrow}>
           {greetingForHour(new Date().getHours()).toUpperCase()} CHECK-IN
         </Text>
-        <Text style={styles.title}>How are you, really?</Text>
+        {/* v0.10 (issue #82): header semantics for screen-reader rotor. */}
+        <Text style={styles.title} accessibilityRole="header">
+          How are you, really?
+        </Text>
         <Text style={styles.sub}>No wrong answer. No streak loss. Just noticing.</Text>
       </View>
 

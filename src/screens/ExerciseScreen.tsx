@@ -30,7 +30,10 @@ export function ExerciseScreen() {
         <Text style={styles.eyebrow}>
           {ex.modality} · {ex.durationMin} MIN
         </Text>
-        <Text style={styles.title}>{ex.title}</Text>
+        {/* v0.10 (issue #82): header semantics for screen-reader rotor. */}
+        <Text style={styles.title} accessibilityRole="header">
+          {ex.title}
+        </Text>
         <Text style={styles.sub}>{ex.description}</Text>
       </View>
 

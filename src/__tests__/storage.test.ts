@@ -177,6 +177,103 @@ describe('schema and corruption recovery', () => {
   });
 });
 
+// v0.10 (issue #79): the result-returning profile/moods reads must
+// distinguish a legitimate empty state from a read failure so the
+// calling screen doesn't route a returning user into onboarding or
+// render an empty chart + 0-day streak when their data is intact.
+describe('safe reads (issue #79)', () => {
+  const PROFILE_KEY = '@fernly/profile';
+  const MOODS_KEY = '@fernly/moods';
+
+  function validProfile() {
+    return {
+      name: 'Test',
+      mascot: 'moon',
+      tone: 'soft',
+      goals: [],
+      onboarded: true,
+      createdAt: '2026-07-21T12:00:00.000Z',
+    };
+  }
+
+  it('getProfileSafe returns empty for a fresh install', async () => {
+    expect(await storage.getProfileSafe()).toEqual({ kind: 'empty' });
+  });
+
+  it('getProfileSafe returns ready with the parsed profile', async () => {
+    asyncData.set(PROFILE_KEY, JSON.stringify(validProfile()));
+    const result = await storage.getProfileSafe();
+    expect(result.kind).toBe('ready');
+    if (result.kind === 'ready') {
+      expect(result.profile.name).toBe('Test');
+    }
+  });
+
+  it('getProfileSafe returns error for malformed JSON', async () => {
+    asyncData.set(PROFILE_KEY, '{not json');
+    const result = await storage.getProfileSafe();
+    expect(result.kind).toBe('error');
+    if (result.kind === 'error') {
+      // The exact reason comes from JSON.parse; just assert non-empty
+      // so we don't pin to a specific V8 message.
+      expect(result.reason.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('getProfileSafe returns error when AsyncStorage throws', async () => {
+    asyncStorage.getItem.mockImplementationOnce(async () => {
+      throw new Error('disk full');
+    });
+    const result = await storage.getProfileSafe();
+    expect(result.kind).toBe('error');
+    if (result.kind === 'error') {
+      expect(result.reason).toContain('disk full');
+    }
+  });
+
+  it('getProfileSafe returns error when the record is the wrong shape', async () => {
+    asyncData.set(PROFILE_KEY, JSON.stringify({ not: 'a profile' }));
+    const result = await storage.getProfileSafe();
+    expect(result.kind).toBe('error');
+  });
+
+  it('getMoodsSafe returns empty for a fresh install', async () => {
+    expect(await storage.getMoodsSafe()).toEqual({ kind: 'empty' });
+  });
+
+  it('getMoodsSafe returns ready with the parsed array', async () => {
+    asyncData.set(MOODS_KEY, JSON.stringify([{ date: '2026-07-21', score: 4 }]));
+    const result = await storage.getMoodsSafe();
+    expect(result.kind).toBe('ready');
+    if (result.kind === 'ready') {
+      expect(result.moods).toHaveLength(1);
+    }
+  });
+
+  it('getMoodsSafe returns error when the record is malformed', async () => {
+    asyncData.set(MOODS_KEY, '{not json');
+    const result = await storage.getMoodsSafe();
+    expect(result.kind).toBe('error');
+  });
+
+  it('getMoodsSafe returns error when AsyncStorage throws', async () => {
+    asyncStorage.getItem.mockImplementationOnce(async () => {
+      throw new Error('IO error');
+    });
+    const result = await storage.getMoodsSafe();
+    expect(result.kind).toBe('error');
+    if (result.kind === 'error') {
+      expect(result.reason).toContain('IO error');
+    }
+  });
+
+  it('getMoodsSafe returns error when the record is not an array', async () => {
+    asyncData.set(MOODS_KEY, JSON.stringify({ not: 'array' }));
+    const result = await storage.getMoodsSafe();
+    expect(result.kind).toBe('error');
+  });
+});
+
 describe('legacy blob migration', () => {
   it('migrates valid legacy sessions, deletes legacy blob, and indexes new keys', async () => {
     const old = [session('legacy-a'), session('legacy-b')];

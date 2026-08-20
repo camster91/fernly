@@ -17,10 +17,12 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, type as t, radius } from '../theme';
 import { crisisResourcesFor, lastVerifiedAt } from '../safety/crisis';
 
@@ -76,6 +78,12 @@ export function CrisisModal({ visible, locale, matchedPhrase: _matchedPhrase, on
   const resources = crisisResourcesFor(effectiveLocale);
   const [openError, setOpenError] = useState<string | null>(null);
   const [unreachableBanner, setUnreachableBanner] = useState(false);
+  // v0.10 (issue #54): safe-area insets so the scrollable content
+  // never sits flush against the iOS notch / Android edge-to-edge
+  // status bar / gesture indicator. Without this, a 320x568 viewport
+  // with 200% text could clip the first row of the modal against the
+  // device chrome.
+  const insets = useSafeAreaInsets();
 
   // Long-press state for the dismiss button.
   const [pressing, setPressing] = useState(false);
@@ -192,92 +200,126 @@ export function CrisisModal({ visible, locale, matchedPhrase: _matchedPhrase, on
     >
       {/* No onRequestClose — Android back / iOS swipe-down cannot dismiss.
           The user MUST complete the long-press on the dismiss button. */}
-      <View style={styles.backdrop}>
+      <View
+        style={[
+          styles.backdrop,
+          // v0.10 (issue #54): inset the backdrop top/bottom by the
+          // device safe area so the modal doesn't slide under the
+          // iOS notch / Android status bar / gesture pill. The card
+          // already has its own maxHeight, but a backdrop that ignores
+          // safe-area pushes the card off-center on notched phones.
+          {
+            paddingTop: Math.max(insets.top, 12) + 8,
+            paddingBottom: Math.max(insets.bottom, 12) + 8,
+          },
+        ]}
+      >
         <View style={styles.card}>
-          <View style={styles.iconWrap}>
-            <Text style={styles.icon}>💛</Text>
-          </View>
-          <Text style={styles.title}>You matter.</Text>
-          <Text style={styles.subtitle}>
-            Right now, please reach out to a human trained for this.
-          </Text>
-          <Text style={styles.body}>
-            I'm an AI. I can't help in the way you deserve right now — and the person best placed to
-            help is one tap away.
-          </Text>
-
-          {unreachableBanner && (
-            <View
-              style={styles.banner}
-              accessible={true}
-              accessibilityRole="alert"
-              accessibilityLiveRegion="assertive"
-              accessibilityLabel="Warning: helpline resources may be temporarily unavailable on this device. If a button fails, try another."
-            >
-              <Text style={styles.bannerText}>
-                ⚠️ Resources may be temporarily unavailable on this device. If a button fails, try
-                another.
-              </Text>
+          {/* v0.10 (issue #54): ScrollView wraps the entire body so
+              content stays reachable at 320x568 with 200% text. The
+              long-press dismiss button is intentionally OUTSIDE the
+              ScrollView (below it) so it always renders in the same
+              place — the scrollable area scrolls if the resource list
+              + banners exceed the card height, the dismiss button
+              does not. The card's maxHeight is bound so the
+              ScrollView has a definite parent to scroll within. */}
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator
+            // v0.10 (issue #54): keep the focus inside the scrollable
+            // area so screen-reader users can swipe through all
+            // resources, not just the visible ones.
+            accessibilityViewIsModal={false}
+          >
+            <View style={styles.iconWrap}>
+              <Text style={styles.icon}>💛</Text>
             </View>
-          )}
+            <Text style={styles.title}>You matter.</Text>
+            <Text style={styles.subtitle}>
+              Right now, please reach out to a human trained for this.
+            </Text>
+            <Text style={styles.body}>
+              I'm an AI. I can't help in the way you deserve right now — and the person best placed
+              to help is one tap away.
+            </Text>
 
-          {openError && (
-            <View
-              style={styles.errorBanner}
-              accessible={true}
-              accessibilityRole="alert"
-              accessibilityLiveRegion="assertive"
-            >
-              <Text style={styles.errorText}>{openError}</Text>
-            </View>
-          )}
+            {unreachableBanner && (
+              <View
+                style={styles.banner}
+                accessible={true}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="assertive"
+                accessibilityLabel="Warning: helpline resources may be temporarily unavailable on this device. If a button fails, try another."
+              >
+                <Text style={styles.bannerText}>
+                  ⚠️ Resources may be temporarily unavailable on this device. If a button fails, try
+                  another.
+                </Text>
+              </View>
+            )}
 
-          <View style={styles.resources}>
-            {resources.map((r, i) => {
-              // Compose a label that distinguishes phone/text/url resources
-              // for screen readers. The visible text alone ("988 Suicide &
-              // Crisis Lifeline (US)") is ambiguous when announced.
-              const action = r.phone
-                ? `Call ${r.phone}`
-                : r.text
-                  ? `Text ${r.text}`
-                  : r.url
-                    ? `Visit ${r.url}`
-                    : '';
-              return (
-                <Pressable
-                  key={i}
-                  onPress={() => open(r)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${r.name}. ${action}`}
-                  accessibilityHint={
-                    r.phone
-                      ? 'Opens your phone app to dial this number.'
-                      : r.text
-                        ? 'Opens your messaging app to send a text.'
-                        : 'Opens in your browser.'
-                  }
-                  hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
-                  style={({ pressed }) => [
-                    styles.resourceBtn,
-                    i === 0 && styles.resourceBtnPrimary,
-                    pressed && { opacity: 0.8 },
-                  ]}
-                >
-                  <Text style={[styles.resourceText, i === 0 && styles.resourceTextPrimary]}>
-                    {r.name}
-                  </Text>
-                  {(r.phone || r.text) && (
-                    <Text style={[styles.resourceSub, i === 0 && { color: colors.paper }]}>
-                      {r.phone ? `Call ${r.phone}` : `Text ${r.text}`}
+            {openError && (
+              <View
+                style={styles.errorBanner}
+                accessible={true}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="assertive"
+              >
+                <Text style={styles.errorText}>{openError}</Text>
+              </View>
+            )}
+
+            <View style={styles.resources}>
+              {resources.map((r, i) => {
+                // Compose a label that distinguishes phone/text/url resources
+                // for screen readers. The visible text alone ("988 Suicide &
+                // Crisis Lifeline (US)") is ambiguous when announced.
+                const action = r.phone
+                  ? `Call ${r.phone}`
+                  : r.text
+                    ? `Text ${r.text}`
+                    : r.url
+                      ? `Visit ${r.url}`
+                      : '';
+                return (
+                  <Pressable
+                    key={i}
+                    onPress={() => open(r)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${r.name}. ${action}`}
+                    accessibilityHint={
+                      r.phone
+                        ? 'Opens your phone app to dial this number.'
+                        : r.text
+                          ? 'Opens your messaging app to send a text.'
+                          : 'Opens in your browser.'
+                    }
+                    hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+                    style={({ pressed }) => [
+                      styles.resourceBtn,
+                      i === 0 && styles.resourceBtnPrimary,
+                      pressed && { opacity: 0.8 },
+                    ]}
+                  >
+                    <Text style={[styles.resourceText, i === 0 && styles.resourceTextPrimary]}>
+                      {r.name}
                     </Text>
-                  )}
-                </Pressable>
-              );
-            })}
-          </View>
+                    {(r.phone || r.text) && (
+                      <Text style={[styles.resourceSub, i === 0 && { color: colors.paper }]}>
+                        {r.phone ? `Call ${r.phone}` : `Text ${r.text}`}
+                      </Text>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
 
-          {/* Long-press dismiss — single tap cannot close the modal. */}
+          {/* Long-press dismiss — single tap cannot close the modal.
+              Sits OUTSIDE the ScrollView so it remains anchored to the
+              bottom of the card regardless of how far the resources
+              were scrolled. See issue #54. */}
           <Pressable
             onPressIn={startHold}
             onPressOut={cancelHold}
@@ -332,7 +374,20 @@ const styles = StyleSheet.create({
     padding: 28,
     maxWidth: 340,
     width: '100%',
+    // v0.10 (issue #54): bound the card height so the ScrollView has
+    // a definite parent to scroll within. 92% of the available
+    // backdrop height leaves room for the safe-area insets that the
+    // backdrop applies (top + bottom). On a 320x568 viewport that
+    // gives ~523pt of scrollable content, enough to fit every
+    // resource button + the dismiss control at 200% text.
+    maxHeight: '92%',
   },
+  // v0.10 (issue #54): the scrollable area takes the remaining card
+  // space minus the dismiss button. flexShrink: 1 lets the ScrollView
+  // give up height to the dismiss control when the keyboard or
+  // extremely long resource lists try to crowd the layout.
+  scroll: { flexShrink: 1 },
+  scrollContent: { paddingBottom: 8 },
   iconWrap: {
     width: 56,
     height: 56,

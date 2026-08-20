@@ -2,7 +2,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, space } from '../theme';
-import type { MoodScore } from '../types';
+import type { MoodScore, UserProfile } from '../types';
 
 const MOODS: { emoji: string; score: MoodScore; label: string }[] = [
   { emoji: '😞', score: 1, label: 'low' },
@@ -73,4 +73,24 @@ const styles = StyleSheet.create({
 
 export function moodLabel(score: MoodScore | undefined): string {
   return MOODS.find((m) => m.score === score)?.label ?? '—';
+}
+
+/**
+ * v0.10 (issue #80): the user-facing label for the mood the user
+ * picked during onboarding. Prefers `initialMoodLabel` (the verbatim
+ * word the user tapped) and falls back to the derived
+ * `moodLabel(initialMood)` for profiles onboarded before the new
+ * field shipped. Returns null if the profile never picked a mood.
+ *
+ * Why this matters: the score-based fallback collapses multiple
+ * distinct onboarding labels (Anxious, Tired, Overwhelmed, Lonely
+ * all → 2) into the same display word. Today and Settings screens
+ * use this helper so the user sees the same word they originally
+ * selected.
+ */
+export function initialMoodLabel(profile: UserProfile | null | undefined): string | null {
+  if (!profile) return null;
+  if (profile.initialMoodLabel) return profile.initialMoodLabel;
+  if (profile.initialMood !== undefined) return moodLabel(profile.initialMood);
+  return null;
 }

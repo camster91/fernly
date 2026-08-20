@@ -4,7 +4,7 @@
 //   2. Bottom tab navigator — Today / Chat / Practice / Insights / You
 // Plus a native stack inside for modal flows (MoodCheckIn, Exercise, Settings).
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -18,7 +18,7 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { MoodCheckInScreen } from '../screens/MoodCheckInScreen';
-import { colors, type as t } from '../theme';
+import { colors, type as t, radius, space } from '../theme';
 import { storage, onStorageReset } from '../storage';
 
 import type { NavigatorScreenParams } from '@react-navigation/native';
@@ -132,36 +132,96 @@ function LoadingScreen() {
   );
 }
 
+// v0.10 (issue #79): explicit error state for a failed profile
+// hydration. Renders inside SafeAreaProvider so it works on iOS
+// notch devices and Android edge-to-edge. The CTA re-runs the
+// hydration read; the error reason is shown so the user (or a
+// future support flow) can act on it. Never auto-routes to
+// onboarding from this state.
+function HydrationErrorScreen({ reason, onRetry }: { reason: string; onRetry: () => void }) {
+  return (
+    <View style={styles.hydrationError}>
+      <Text
+        style={styles.hydrationErrorTitle}
+        accessibilityRole="header"
+      >
+        Couldn't read your profile.
+      </Text>
+      <Text style={styles.hydrationErrorBody}>
+        We hit a problem loading Fernly. Your data may still be on this device — we just can't open
+        it right now. Try again, or close and reopen the app.
+      </Text>
+      <Text
+        style={styles.hydrationErrorReason}
+        accessibilityLabel={`Technical detail: ${reason}`}
+      >
+        {reason}
+      </Text>
+      <Pressable
+        onPress={onRetry}
+        accessibilityRole="button"
+        accessibilityLabel="Try loading your profile again"
+        style={({ pressed }) => [
+          styles.hydrationErrorCta,
+          pressed && { opacity: 0.85 },
+        ]}
+      >
+        <Text style={styles.hydrationErrorCtaText}>Try again</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+// v0.10 (issue #79): hydration state for the profile read. The
+// boundary between "first run" and "couldn't read your data" is
+// critical — a returning user whose AsyncStorage failed must NOT
+// be routed into onboarding (which would overwrite the existing
+// profile on save). See getProfileSafe in storage.ts.
+type Hydration =
+  | { kind: 'loading' }
+  | { kind: 'ready'; profile: import('../types').UserProfile | null }
+  | { kind: 'error'; reason: string };
+
 export function RootNav() {
-  const [loaded, setLoaded] = useState(false);
-  const [onboarded, setOnboarded] = useState(false);
+  const [hydration, setHydration] = useState<Hydration>({ kind: 'loading' });
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const p = await storage.getProfile();
-        if (!cancelled) setOnboarded(!!p?.onboarded);
-      } catch {
-        // Storage layer failed. Treat as a fresh install — show onboarding
-        // so the user can recover rather than stare at a spinner forever.
-        if (!cancelled) setOnboarded(false);
-      } finally {
-        if (!cancelled) setLoaded(true);
+      // v0.10 (issue #79): use the result-returning read so a failure
+      // is distinguishable from a legitimate first run. Previously a
+      // try/catch on getProfile() set onboarded=false on ANY throw,
+      // which is exactly the silent onboarding-routing bug the issue
+      // describes.
+      const result = await storage.getProfileSafe();
+      if (cancelled) return;
+      if (result.kind === 'error') {
+        setHydration({ kind: 'error', reason: result.reason });
+      } else if (result.kind === 'empty') {
+        setHydration({ kind: 'ready', profile: null });
+      } else {
+        setHydration({ kind: 'ready', profile: result.profile });
       }
     })();
     // Subscribe to storage.reset events so that "Reset Fernly" in the
     // ProfileScreen actually returns the user to onboarding. Without this,
     // RootNav's onboarded state stays in memory and the user lands on
     // an empty tabs UI. The unsubscribe function cleans up on unmount.
-    const unsubscribe = onStorageReset(() => {
-      // Re-read profile — if it's gone (cleared), show onboarding.
-      // Don't await: the listener should be sync-friendly, and a stale
-      // onboarded=false is the safest default.
-      storage
-        .getProfile()
-        .then((p) => setOnboarded(!!p?.onboarded))
-        .catch(() => setOnboarded(false));
+    //
+    // v0.10 (issue #79): reset re-reads via the safe API so a reset
+    // followed by a storage failure doesn't get stuck on the wrong
+    // screen. A reset that fails to read now shows the error screen
+    // instead of falling into onboarding.
+    const unsubscribe = onStorageReset(async () => {
+      const result = await storage.getProfileSafe();
+      if (cancelled) return;
+      if (result.kind === 'error') {
+        setHydration({ kind: 'error', reason: result.reason });
+      } else if (result.kind === 'empty') {
+        setHydration({ kind: 'ready', profile: null });
+      } else {
+        setHydration({ kind: 'ready', profile: result.profile });
+      }
     });
     return () => {
       cancelled = true;
@@ -169,7 +229,21 @@ export function RootNav() {
     };
   }, []);
 
-  if (!loaded) return <LoadingScreen />;
+  // v0.10 (issue #79): show an explicit error screen when the read
+  // failed. Never route a returning user into onboarding from an
+  // exception. The screen has a retry that re-runs the same effect.
+  if (hydration.kind === 'loading') return <LoadingScreen />;
+  if (hydration.kind === 'error') {
+    return (
+      <SafeAreaProvider>
+        <HydrationErrorScreen
+          reason={hydration.reason}
+          onRetry={() => setHydration({ kind: 'loading' })}
+        />
+      </SafeAreaProvider>
+    );
+  }
+  const onboarded = !!hydration.profile?.onboarded;
 
   return (
     <SafeAreaProvider>
@@ -177,8 +251,21 @@ export function RootNav() {
         {!onboarded ? (
           <OnboardingScreen
             onDone={async () => {
+              // v0.10 (issue #79): onboarding completion now updates
+              // the hydration state directly. Previously this called
+              // setOnboarded(true) which still read from the now-removed
+              // useState. Re-running the safe read is the safest
+              // path: it surfaces any post-save storage error rather
+              // than silently marking the user onboarded.
               await storage.setOnboarded(true);
-              setOnboarded(true);
+              const after = await storage.getProfileSafe();
+              if (after.kind === 'ready') {
+                setHydration({ kind: 'ready', profile: after.profile });
+              } else if (after.kind === 'empty') {
+                setHydration({ kind: 'ready', profile: null });
+              } else {
+                setHydration({ kind: 'error', reason: after.reason });
+              }
             }}
           />
         ) : (
@@ -210,6 +297,44 @@ const styles = StyleSheet.create({
   loadingMark: { fontSize: 48, marginBottom: 12 },
   loadingText: { ...t.body, color: colors.text, marginTop: 12 },
   loadingHint: { ...t.small, color: colors.textMuted, marginTop: 4 },
+  // v0.10 (issue #79): hydration-error screen styles. Padded top so
+  // the title doesn't sit flush against the iOS notch / Android
+  // status bar on first launch. No logo, no streak, no greeting — this
+  // is a recovery surface, not a brand surface.
+  hydrationError: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space.s6,
+    backgroundColor: colors.bg,
+  },
+  hydrationErrorTitle: {
+    ...t.displayLg,
+    color: colors.text,
+    marginBottom: space.s3,
+    textAlign: 'center',
+  },
+  hydrationErrorBody: {
+    ...t.body,
+    color: colors.textSoft,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: space.s4,
+  },
+  hydrationErrorReason: {
+    ...t.small,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginBottom: space.s5,
+    fontFamily: 'Menlo',
+  },
+  hydrationErrorCta: {
+    backgroundColor: colors.ink,
+    paddingVertical: 16,
+    paddingHorizontal: 28,
+    borderRadius: radius.full,
+  },
+  hydrationErrorCtaText: { ...t.bodyBold, color: colors.paper },
   tabBar: {
     backgroundColor: colors.paper2,
     borderTopWidth: 1,

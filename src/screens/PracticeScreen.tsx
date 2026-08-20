@@ -28,7 +28,10 @@ export function PracticeScreen() {
   return (
     <ScreenContainer>
       <View style={styles.header}>
-        <Text style={styles.h1}>Practice</Text>
+        {/* v0.10 (issue #82): header semantics for screen-reader rotor. */}
+        <Text style={styles.h1} accessibilityRole="header">
+          Practice
+        </Text>
         <Text style={styles.sub}>Pick what fits right now.</Text>
         {/* v0.9: surface "how many of these are real" up front. Otherwise
             users assume every card is actionable — 7/8 show as

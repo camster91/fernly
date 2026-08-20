@@ -108,44 +108,67 @@ export function ChatScreen() {
   // even if the user had intentionally scrolled up to read history.
   const [stickToBottom, setStickToBottom] = useState(true);
 
+  // v0.10 (issue #79): a focused read failure on chat is distinct
+  // from "no prior conversation". A returning user with a history
+  // who sees an empty chat because the read failed has been
+  // silently reset. The screen tracks a focused hydration error so
+  // the user can see what happened and retry.
+  const [chatLoadError, setChatLoadError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const p = await storage.getProfile();
-        if (cancelled) return;
-        setProfile(p);
-
-        // v0.3: getChats() runs the legacy-blob migration (v0 → v0.3) as
-        // a side effect, then returns []. After migration, the active
-        // session id either points at a migrated session, or is null and
-        // we start fresh.
-        await storage.getChats();
-
-        const id = await storage.getActiveSessionId();
-        if (cancelled) return;
-        if (id) {
-          const session = await storage.getChatSession(id);
-          // v0.8: check cancelled AFTER every async hop. The previous
-          // code only checked once after the await, so a navigaway-
-          // mid-resolve still triggered the stale-id write at line 112.
-          // See plans/05-full-codebase-review-2026-07-22.md P0-5.
-          if (cancelled) return;
-          if (session) {
-            setActiveSessionId(session.id);
-            setMessages(session.messages);
-          } else if (!cancelled) {
-            // Active id is stale — clear it. Guarded by cancelled
-            // so an unmount doesn't clobber persisted state.
-            await storage.setActiveSessionId(null);
-          }
-        }
-      } catch {
-        // Storage layer failed. Render an empty chat so the user can
-        // start fresh rather than seeing the empty state indefinitely.
-      } finally {
-        if (!cancelled) setLoaded(true);
+      // v0.10 (issue #79): use the result-returning safe read so a
+      // profile-storage failure is shown to the user instead of
+      // being collapsed into an empty profile + empty chat. The
+      // getChats() legacy migration still runs (it has its own
+      // defensive two-phase write) but its failure is also surfaced.
+      const profileResult = await storage.getProfileSafe();
+      if (cancelled) return;
+      if (profileResult.kind === 'error') {
+        setChatLoadError(profileResult.reason);
+        setLoaded(true);
+        return;
       }
+      setProfile(profileResult.kind === 'ready' ? profileResult.profile : null);
+      setChatLoadError(null);
+
+      // v0.3: getChats() runs the legacy-blob migration (v0 → v0.3) as
+      // a side effect, then returns []. After migration, the active
+      // session id either points at a migrated session, or is null and
+      // we start fresh.
+      try {
+        await storage.getChats();
+      } catch (e) {
+        if (cancelled) return;
+        // Legacy migration is best-effort; if it throws, the user
+        // can still chat — they'll just start a new session.
+        setChatLoadError(
+          e instanceof Error
+            ? `Couldn't migrate legacy chats: ${e.message}`
+            : "Couldn't migrate legacy chats.",
+        );
+      }
+
+      const id = await storage.getActiveSessionId();
+      if (cancelled) return;
+      if (id) {
+        const session = await storage.getChatSession(id);
+        // v0.8: check cancelled AFTER every async hop. The previous
+        // code only checked once after the await, so a navigaway-
+        // mid-resolve still triggered the stale-id write at line 112.
+        // See plans/05-full-codebase-review-2026-07-22.md P0-5.
+        if (cancelled) return;
+        if (session) {
+          setActiveSessionId(session.id);
+          setMessages(session.messages);
+        } else if (!cancelled) {
+          // Active id is stale — clear it. Guarded by cancelled
+          // so an unmount doesn't clobber persisted state.
+          await storage.setActiveSessionId(null);
+        }
+      }
+      if (!cancelled) setLoaded(true);
     })();
     return () => {
       cancelled = true;
@@ -368,6 +391,23 @@ export function ChatScreen() {
 
   return (
     <ScreenContainer scroll={false} edges={['top']}>
+      {/* v0.10 (issue #79): visible signal that a focused read failed.
+          Sits at the top of the chat surface so the user sees it
+          before any empty-state copy. Non-blocking — they can still
+          type — but visible enough that the data interpretation is
+          "couldn't read" not "no data". */}
+      {chatLoadError && (
+        <View
+          style={styles.loadErrorChip}
+          accessible={true}
+          accessibilityRole="alert"
+          accessibilityLabel={`Couldn't read your chat: ${chatLoadError}. Close and reopen the app to retry.`}
+        >
+          <Text style={styles.loadErrorText}>
+            ⚠️ Couldn't read your chat. Close and reopen the app to retry.
+          </Text>
+        </View>
+      )}
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -478,6 +518,18 @@ export function ChatScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  // v0.10 (issue #79): chat load-error chip. Sits above the
+  // KeyboardAvoidingView so it always renders even when the
+  // keyboard is up. Same color/tone as the TodayScreen chip.
+  loadErrorChip: {
+    backgroundColor: colors.yellow100,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    marginHorizontal: space.s6,
+    marginTop: space.s2,
+    borderRadius: radius.md,
+  },
+  loadErrorText: { ...t.small, color: colors.text, textAlign: 'center' },
   empty: { paddingHorizontal: space.s6, paddingTop: 80, alignItems: 'center' },
   emptyEmoji: { fontSize: 48, marginBottom: space.s5 },
   emptyTitle: { ...t.title, fontSize: 24, color: colors.text, marginBottom: space.s2 },

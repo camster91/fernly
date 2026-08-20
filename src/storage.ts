@@ -107,6 +107,16 @@ const SESSION_KEY_PREFIX = 'fernly.session.v1.';
 // ---- Schema migration helpers ----
 const CURRENT_CHAT_VERSION = 1 as const;
 
+// v0.10 (issue #79): human-readable description of a storage error.
+// Used by the result-returning getProfileSafe/getMoodsSafe so the
+// caller can show "Couldn't read your profile: <reason>" rather than
+// silently treating the error as a fresh install.
+function describeError(e: unknown): string {
+  if (e instanceof Error) return e.message || e.name || 'unknown error';
+  if (typeof e === 'string') return e;
+  return 'unknown error';
+}
+
 function migrateChatSession(raw: unknown): ChatSession | null {
   if (!raw || typeof raw !== 'object') return null;
   const s = raw as Partial<ChatSession> & { id?: unknown; messages?: unknown };
@@ -277,9 +287,71 @@ export const storage = {
     await asyncSet(ASYNC_KEYS.profile, p);
   },
 
+  // v0.10 (issue #79): result-returning profile read. Unlike
+  // getProfile(), which collapses "no record" and "read failure" into
+  // the same null return, this distinguishes them so the calling
+  // screen can show a "couldn't read your data" state instead of
+  // routing a returning user into onboarding or an empty Today.
+  //
+  // - kind: 'empty'  → no profile record exists (legitimate first run)
+  // - kind: 'ready'  → profile record exists and parsed
+  // - kind: 'error'  → AsyncStorage threw OR the record exists but is
+  //                    not valid JSON / not a valid UserProfile shape.
+  //                    The caller must NOT treat this as a first run
+  //                    — that path is reserved for kind: 'empty'.
+  async getProfileSafe(): Promise<
+    | { kind: 'empty' }
+    | { kind: 'ready'; profile: UserProfile }
+    | { kind: 'error'; reason: string }
+  > {
+    let raw: string | null = null;
+    try {
+      raw = await AsyncStorage.getItem(ASYNC_KEYS.profile);
+    } catch (e) {
+      return { kind: 'error', reason: describeError(e) };
+    }
+    if (raw === null) return { kind: 'empty' };
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== 'object' || !('onboarded' in parsed)) {
+        return { kind: 'error', reason: 'profile record is malformed' };
+      }
+      return { kind: 'ready', profile: parsed as UserProfile };
+    } catch (e) {
+      return { kind: 'error', reason: describeError(e) };
+    }
+  },
+
   // --- Moods (unencrypted AsyncStorage) ---
   async getMoods(): Promise<MoodEntry[]> {
     return (await asyncGet<MoodEntry[]>(ASYNC_KEYS.moods)) ?? [];
+  },
+  // v0.10 (issue #79): result-returning moods read. Same shape as
+  // getProfileSafe — distinguishes "no moods yet" from "couldn't
+  // read moods". Today and Insights use this so a read failure
+  // doesn't show an empty chart + "no streak" message when the
+  // user's data is still on disk.
+  async getMoodsSafe(): Promise<
+    | { kind: 'empty' }
+    | { kind: 'ready'; moods: MoodEntry[] }
+    | { kind: 'error'; reason: string }
+  > {
+    let raw: string | null = null;
+    try {
+      raw = await AsyncStorage.getItem(ASYNC_KEYS.moods);
+    } catch (e) {
+      return { kind: 'error', reason: describeError(e) };
+    }
+    if (raw === null) return { kind: 'empty' };
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) {
+        return { kind: 'error', reason: 'moods record is malformed' };
+      }
+      return { kind: 'ready', moods: parsed as MoodEntry[] };
+    } catch (e) {
+      return { kind: 'error', reason: describeError(e) };
+    }
   },
   async addMood(m: MoodEntry) {
     const all = await storage.getMoods();

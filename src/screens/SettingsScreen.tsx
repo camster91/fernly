@@ -16,7 +16,8 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { Card } from '../components/Card';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
-import type { Goal, Mascot, MoodScore, Tone, UserProfile } from '../types';
+import { initialMoodLabel as formatInitialMood } from '../components/MoodPicker';
+import type { Goal, Mascot, Tone, UserProfile } from '../types';
 
 type Props = {
   navigation: { goBack: () => void };
@@ -73,18 +74,20 @@ export function SettingsScreen({ navigation }: Props) {
 
   const save = useCallback(async () => {
     if (!original) return;
-    // Preserve initialMood if present (added in plans/05 P1-15;
-    // some older profiles may not have it). Read via index access
-    // with a type guard to keep the SettingsScreen independent of
-    // that branch's UserProfile change.
+    // Preserve initialMood + initialMoodLabel (issue #80). Both are
+    // read-only fields that the user set in onboarding; settings edits
+    // mascot/tone/goals and leaves the start-state mood untouched.
     const next: UserProfile = {
       ...original,
       mascot,
       tone,
       goals,
-      ...(('initialMood' in original && original.initialMood
+      ...(original.initialMoodLabel
+        ? { initialMoodLabel: original.initialMoodLabel }
+        : {}),
+      ...(original.initialMood !== undefined
         ? { initialMood: original.initialMood }
-        : {}) as Partial<UserProfile>),
+        : {}),
     };
     await storage.setProfile(next);
     setOriginal(next);
@@ -136,7 +139,10 @@ export function SettingsScreen({ navigation }: Props) {
       >
         <View style={styles.header}>
           <Text style={styles.eyebrow}>SETTINGS</Text>
-          <Text style={styles.title}>Your preferences</Text>
+          {/* v0.10 (issue #82): header semantics for screen-reader rotor. */}
+          <Text style={styles.title} accessibilityRole="header">
+            Your preferences
+          </Text>
           <Text style={styles.sub}>
             Change your mascot, tone, or goals. Changes save with the button at the bottom.
           </Text>
@@ -208,12 +214,13 @@ export function SettingsScreen({ navigation }: Props) {
         {/* Initial mood — read-only display when present.
             Surfaced for transparency but not editable (would lose
             the "you said X when you signed up" Today greeting). */}
-        {original && 'initialMood' in original && original.initialMood !== undefined && (
+        {original && (original.initialMoodLabel || original.initialMood !== undefined) && (
           <Card>
             <Text style={styles.sectionLabel}>MOOD WHEN YOU STARTED</Text>
             <Text style={styles.sub}>
-              {initialMoodLabel((original.initialMood as MoodScore | undefined) ?? 4)} (set during
-              onboarding)
+              {/* v0.10 (issue #80): show the verbatim word the user picked
+                  in onboarding, not a score-derived label. */}
+              {formatInitialMood(original) ?? 'Unknown'} (set during onboarding)
             </Text>
           </Card>
         )}
@@ -259,15 +266,11 @@ export function SettingsScreen({ navigation }: Props) {
   );
 }
 
-function initialMoodLabel(score: MoodScore): string {
-  // Mirrors moodLabel in components/MoodPicker.tsx — kept local to
-  // avoid a circular import via MoodPicker for a single row.
-  if (score >= 5) return 'Hopeful';
-  if (score >= 4) return 'Okay';
-  if (score >= 3) return 'Steady';
-  if (score >= 2) return 'Heavy';
-  return 'Low';
-}
+// v0.10 (issue #80): the local `initialMoodLabel` helper is gone.
+// The screen now uses the canonical `initialMoodLabel` from
+// `components/MoodPicker.tsx` (imported as `formatInitialMood` to
+// avoid shadowing the imported symbol). The local copy was a
+// score-derived label that didn't match the word the user picked.
 
 const styles = StyleSheet.create({
   header: { paddingHorizontal: space.s6, paddingTop: space.s6, paddingBottom: space.s4 },

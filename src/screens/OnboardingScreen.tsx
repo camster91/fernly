@@ -6,25 +6,32 @@
 //   5. Tone selector
 // Open beta: no paywall, no reminders ask, no privacy gate — we ship the lightest possible path.
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
-import type { Goal, Mascot, MoodScore, Tone, UserProfile } from '../types';
+import type { Goal, Mascot, MoodId, MoodScore, Tone, UserProfile } from '../types';
 
-// v0.9: changed `MOOD_CHOICES` from string[] to { label: MoodScore, text }
-// so the onboarding pick is persisted as a real score (1-6), not a free-
-// text string nobody reads. TodayScreen can greet the user with their
-// starting mood on first launch. See plans/05 P1-15.
-const MOOD_CHOICES: { label: MoodScore; text: string }[] = [
-  { label: 2, text: 'Anxious' },
-  { label: 1, text: 'Numb' },
-  { label: 2, text: 'Tired' },
-  { label: 5, text: 'Hopeful' },
-  { label: 2, text: 'Overwhelmed' },
-  { label: 4, text: 'Okay' },
-  { label: 2, text: 'Lonely' },
+// v0.10 (issue #80): each onboarding mood choice now has a stable
+// `id`, the verbatim `text` the user tapped, AND the `score` the rest
+// of the app needs (insights chart, mood emoji picker, etc.). Storing
+// only the score collapsed three distinct labels (Anxious / Tired /
+// Overwhelmed / Lonely) to 2 and made Today re-greet the user with a
+// different word. The id is the canonical round-trip key; `text` is
+// the visible label; `score` is the analytics/chart value.
+const MOOD_CHOICES: { id: MoodId; text: string; score: MoodScore }[] = [
+  { id: 'anxious', text: 'Anxious', score: 2 },
+  { id: 'numb', text: 'Numb', score: 1 },
+  { id: 'tired', text: 'Tired', score: 2 },
+  { id: 'hopeful', text: 'Hopeful', score: 5 },
+  { id: 'overwhelmed', text: 'Overwhelmed', score: 2 },
+  { id: 'okay', text: 'Okay', score: 4 },
+  { id: 'lonely', text: 'Lonely', score: 2 },
 ];
+
+function moodById(id: MoodId) {
+  return MOOD_CHOICES.find((m) => m.id === id) ?? null;
+}
 const GOALS: { id: Goal; label: string }[] = [
   { id: 'sleep', label: '💤 Sleep better' },
   { id: 'quiet_thoughts', label: '🧠 Quiet my thoughts' },
@@ -68,10 +75,16 @@ interface Props {
 export function OnboardingScreen({ onDone }: Props) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
-  // v0.9: MoodScore (1-6) instead of free-text string. Previously the
-  // picked mood was discarded — kept as a 'string | null' with no
-  // receiver. Now it persists as initialMood on the profile. See P1-15.
-  const [mood, setMood] = useState<MoodScore | null>(null);
+  // v0.10 (issue #80): track the choice by stable MoodId so the picked
+  // label round-trips to Today / Settings. The score is derived at save
+  // time from the chosen MoodId entry.
+  const [mood, setMood] = useState<MoodId | null>(null);
+  // v0.10 (issue #57): single-flight save state. Without this, a rapid
+  // double-tap on "Begin" (or a tap + the keyboard's Return key) would
+  // call setProfile twice. The second call can race the first and the
+  // profile can end up with a half-written goals array.
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [mascot, setMascot] = useState<Mascot>('moon');
   const [tone, setTone] = useState<Tone>('soft');
@@ -84,6 +97,12 @@ export function OnboardingScreen({ onDone }: Props) {
     // tapping "Begin" on step 4 (the last step with content) set step to
     // 5, no JSX rendered, and the user was stuck on a blank screen.
     // See plans/05-full-codebase-review-2026-07-22.md P0-2.
+    //
+    // v0.10 (issue #57): if a save is already in flight, ignore the tap.
+    // The CTA also disables via `saving` state but a tap registered just
+    // before that state flipped would still hit this path. The guard is
+    // a belt-and-suspenders.
+    if (saving) return;
     if (step < total - 1) setStep((s) => s + 1);
     else save();
   }
@@ -96,6 +115,18 @@ export function OnboardingScreen({ onDone }: Props) {
   }
 
   async function save() {
+    // v0.10 (issue #57): single-flight save. If a save is already
+    // in-flight (rapid double-tap, keyboard Return + tap) the second
+    // call is a no-op. Without this guard the user can end up with a
+    // half-written profile when the second save lands before the
+    // first completes.
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    // Derive the score from the chosen MoodId. The user's text label
+    // round-trips as `initialMoodLabel` so Today can re-greet with the
+    // word they actually picked (issue #80).
+    const picked = mood ? moodById(mood) : null;
     const profile: UserProfile = {
       name: name || 'Friend',
       mascot,
@@ -103,13 +134,34 @@ export function OnboardingScreen({ onDone }: Props) {
       goals,
       onboarded: true,
       createdAt: new Date().toISOString(),
-      // v0.9: persist the onboarding mood pick so it can be surfaced
-      // on the Today greeting instead of being collected and discarded.
-      // See plans/05 P1-15.
-      initialMood: mood ?? undefined,
+      // v0.9: persist the score. Retained for backward compatibility
+      // and for callers that need a numeric value (insights chart etc.).
+      initialMood: picked?.score,
+      // v0.10 (issue #80): the verbatim text the user tapped. The
+      // screen round-trips this through to Today and Settings so the
+      // user sees the same word they picked. Migrated profiles
+      // (initialMoodLabel undefined) fall back to moodLabel(score) in
+      // the consumer screens.
+      initialMoodLabel: picked?.text,
     };
-    await storage.setProfile(profile);
-    onDone();
+    try {
+      await storage.setProfile(profile);
+      // Success: leave the saving flag set (we're about to unmount via
+      // onDone) and call the parent's completion handler. The parent
+      // navigates to the main tabs.
+      onDone();
+    } catch (e) {
+      // v0.10 (issue #57): surface the failure inline and keep the
+      // entered answers so the user can retry without re-onboarding.
+      // Previously the failure was swallowed by storage.setProfile and
+      // onDone was called regardless — a silent data-loss path.
+      setSaving(false);
+      setSaveError(
+        e instanceof Error
+          ? `Couldn't save your profile: ${e.message}. Try again.`
+          : "Couldn't save your profile. Try again.",
+      );
+    }
   }
 
   const canAdvance = () => {
@@ -160,15 +212,15 @@ export function OnboardingScreen({ onDone }: Props) {
             <View style={styles.pillRow}>
               {MOOD_CHOICES.map((m) => (
                 <Pressable
-                  key={m.text}
-                  onPress={() => setMood(m.label)}
+                  key={m.id}
+                  onPress={() => setMood(m.id)}
                   accessibilityRole="button"
                   accessibilityLabel={m.text}
-                  accessibilityState={{ selected: mood === m.label }}
+                  accessibilityState={{ selected: mood === m.id }}
                   hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  style={[styles.pill, mood === m.label && styles.pillActive]}
+                  style={[styles.pill, mood === m.id && styles.pillActive]}
                 >
-                  <Text style={[styles.pillText, mood === m.label && styles.pillTextActive]}>
+                  <Text style={[styles.pillText, mood === m.id && styles.pillTextActive]}>
                     {m.text}
                   </Text>
                 </Pressable>
@@ -257,6 +309,7 @@ export function OnboardingScreen({ onDone }: Props) {
             onPress={back}
             accessibilityRole="button"
             accessibilityLabel="Go back to the previous step"
+            disabled={saving}
             style={styles.back}
           >
             <Text style={styles.backText}>Back</Text>
@@ -264,21 +317,49 @@ export function OnboardingScreen({ onDone }: Props) {
         )}
         <Pressable
           onPress={next}
-          disabled={!canAdvance()}
+          disabled={!canAdvance() || saving}
           accessibilityRole="button"
           accessibilityLabel={
-            step === total - 1 ? 'Begin using Fernly' : 'Continue to the next step'
+            saving
+              ? 'Saving your profile'
+              : step === total - 1
+                ? 'Begin using Fernly'
+                : 'Continue to the next step'
           }
-          accessibilityState={{ disabled: !canAdvance() }}
+          accessibilityState={{ disabled: !canAdvance() || saving, busy: saving }}
           style={({ pressed }) => [
             styles.cta,
-            !canAdvance() && styles.ctaDisabled,
+            (!canAdvance() || saving) && styles.ctaDisabled,
             pressed && { opacity: 0.85 },
           ]}
         >
-          <Text style={styles.ctaText}>{step === total - 1 ? 'Begin' : 'Next'}</Text>
+          <Text style={styles.ctaText}>
+            {saving ? 'Saving…' : step === total - 1 ? 'Begin' : 'Next'}
+          </Text>
         </Pressable>
       </View>
+
+      {/* v0.10 (issue #57): inline save error with retry. The entered
+          answers remain in component state, so a retry calls save()
+          again with the same data. */}
+      {saveError && (
+        <View
+          style={styles.errorBanner}
+          accessible={true}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="assertive"
+        >
+          <Text style={styles.errorText}>{saveError}</Text>
+          <Pressable
+            onPress={save}
+            accessibilityRole="button"
+            accessibilityLabel="Retry saving your profile"
+            style={({ pressed }) => [styles.retryCta, pressed && { opacity: 0.85 }]}
+          >
+            <Text style={styles.retryCtaText}>Try again</Text>
+          </Pressable>
+        </View>
+      )}
     </ScreenContainer>
   );
 }
@@ -292,10 +373,25 @@ function Step({
   eyebrow: string;
   children: React.ReactNode;
 }) {
+  // v0.10 (issue #82): announce the new step to screen readers once it
+  // mounts. Without this, TalkBack/VoiceOver users have no deterministic
+  // signal that the step changed — the new content is just swapped in
+  // place. The announcement is brief and role-neutral so it doesn't
+  // interrupt a reading flow.
+  React.useEffect(() => {
+    AccessibilityInfo.announceForAccessibility(`${eyebrow}. ${title}`);
+  }, [eyebrow, title]);
   return (
     <View style={styles.stepWrap}>
       <Text style={styles.eyebrow}>{eyebrow}</Text>
-      <Text style={styles.title}>{title}</Text>
+      {/* v0.10 (issue #82): the step title carries header semantics so
+          VoiceOver/TalkBack announces "Heading: {title}" when the
+          user rotors to it. Combined with the announceForAccessibility
+          above, this gives screen-reader users a deterministic signal
+          that the step changed. */}
+      <Text style={styles.title} accessibilityRole="header">
+        {title}
+      </Text>
       <View>{children}</View>
     </View>
   );
@@ -383,4 +479,29 @@ const styles = StyleSheet.create({
   },
   ctaDisabled: { backgroundColor: colors.ink4 },
   ctaText: { color: colors.paper, fontWeight: '700', fontSize: 16 },
+
+  // v0.10 (issue #57): inline error banner + retry CTA. Sits just above
+  // the footer so it's reachable without scrolling. The accessible role
+  // and live region announce the failure to screen readers as soon as
+  // it appears.
+  errorBanner: {
+    position: 'absolute',
+    bottom: 96,
+    left: space.s6,
+    right: space.s6,
+    backgroundColor: colors.rose50,
+    borderRadius: radius.md,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.rose100,
+    alignItems: 'center',
+  },
+  errorText: { ...t.small, color: colors.warn, textAlign: 'center', marginBottom: 8 },
+  retryCta: {
+    backgroundColor: colors.warnDeep,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: radius.full,
+  },
+  retryCtaText: { color: colors.paper, fontWeight: '700', fontSize: 14 },
 });
