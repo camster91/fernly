@@ -3,6 +3,11 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, space } from '../theme';
 import type { MoodScore, UserProfile } from '../types';
+// v0.10 (issue #80): the `moodLabel` + `initialMoodLabel` helpers
+// live in `src/util/moodLabel.ts` so the unit test can import
+// them without crossing into a .tsx file. Re-exported here for
+// callers that already import from MoodPicker.
+import { moodLabel as _moodLabel, initialMoodLabel as _initialMoodLabel } from '../util/moodLabel';
 
 const MOODS: { emoji: string; score: MoodScore; label: string }[] = [
   { emoji: '😞', score: 1, label: 'low' },
@@ -88,26 +93,12 @@ const styles = StyleSheet.create({
   emoji: { fontSize: 22 },
 });
 
-export function moodLabel(score: MoodScore | undefined): string {
-  return MOODS.find((m) => m.score === score)?.label ?? '—';
-}
-
-/**
- * v0.10 (issue #80): the user-facing label for the mood the user
- * picked during onboarding. Prefers `initialMoodLabel` (the verbatim
- * word the user tapped) and falls back to the derived
- * `moodLabel(initialMood)` for profiles onboarded before the new
- * field shipped. Returns null if the profile never picked a mood.
- *
- * Why this matters: the score-based fallback collapses multiple
- * distinct onboarding labels (Anxious, Tired, Overwhelmed, Lonely
- * all → 2) into the same display word. Today and Settings screens
- * use this helper so the user sees the same word they originally
- * selected.
- */
-export function initialMoodLabel(profile: UserProfile | null | undefined): string | null {
-  if (!profile) return null;
-  if (profile.initialMoodLabel) return profile.initialMoodLabel;
-  if (profile.initialMood !== undefined) return moodLabel(profile.initialMood);
-  return null;
-}
+// Re-exports for backward compatibility — callers that import
+// `moodLabel` / `initialMoodLabel` from MoodPicker continue to
+// work. The implementations now live in src/util/moodLabel.ts.
+export const moodLabel = _moodLabel;
+export const initialMoodLabel = _initialMoodLabel;
+// Suppress the unused-import warning for the now-redundant
+// MOODS-local `label` field. The emoji picker still consumes MOODS
+// for the visible row.
+void MOODS;

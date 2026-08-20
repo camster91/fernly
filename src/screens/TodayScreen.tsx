@@ -23,29 +23,16 @@ const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 // up today?") was a morning phrase rendered at 9pm. The data model now
 // returns the noun, an uppercase label, and a daypart-appropriate check-in
 // prompt so each surface can compose the copy it actually wants.
-interface Daypart {
-  /** Lowercase noun used in the h1: "Good morning, name." */
-  noun: string;
-  /** Uppercase label used in the eyebrow: "MORNING · 7-DAY STREAK". */
-  label: string;
-  /** Daypart-appropriate check-in prompt. */
-  checkInPrompt: string;
-}
-function daypartForHour(h: number): Daypart {
-  if (h < 5) {
-    return { noun: 'night', label: 'LATE NIGHT', checkInPrompt: "How's your night going?" };
-  }
-  if (h < 12) {
-    return { noun: 'morning', label: 'MORNING', checkInPrompt: 'How are you waking up today?' };
-  }
-  if (h < 17) {
-    return { noun: 'afternoon', label: 'AFTERNOON', checkInPrompt: 'How is the afternoon landing?' };
-  }
-  if (h < 21) {
-    return { noun: 'evening', label: 'EVENING', checkInPrompt: 'How is the evening sitting with you?' };
-  }
-  return { noun: 'wind-down', label: 'WIND-DOWN', checkInPrompt: 'Ready to wind down?' };
-}
+//
+// v0.10 (follow-up): the daypart function moved to
+// `src/util/daypart.ts` so the unit test can import it without
+// dragging the .tsx into vitest's Node loader (no JSX support
+// without an esbuild config bump). TodayScreen re-exports
+// `greetingForHour` for the one downstream caller that still
+// uses it.
+import { daypartForHour, type Daypart } from '../util/daypart';
+export { daypartForHour };
+export type { Daypart };
 
 // Backwards-compatible label helper. Callers (Tests, ProfileScreen) that
 // previously consumed `greetingForHour()` (a complete sentence) now get
@@ -53,8 +40,7 @@ function daypartForHour(h: number): Daypart {
 function greetingForHour(h: number): string {
   return daypartForHour(h).noun;
 }
-export { greetingForHour, daypartForHour };
-export type { Daypart };
+export { greetingForHour };
 
 export function TodayScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
