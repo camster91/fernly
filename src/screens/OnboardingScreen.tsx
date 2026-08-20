@@ -5,69 +5,28 @@
 //   4. Mascot picker
 //   5. Tone selector
 // Open beta: no paywall, no reminders ask, no privacy gate — we ship the lightest possible path.
+//
+// v0.10 (issue #76): MASCOTS / TONES / GOALS / MOOD_CHOICES used
+// to be defined inline here AND in SettingsScreen, drifting over
+// time. Now they're consolidated in `src/data/preferences.ts` as
+// the single source of truth. This screen consumes the
+// `onboardingLabel` / `onboardingSample` variants for the
+// first-touch picker; SettingsScreen uses the plain `label` /
+// `sample` variants.
 import React, { useState } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Pill } from '../components/Pill';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
-import type { Goal, Mascot, MoodId, MoodScore, Tone, UserProfile } from '../types';
-
-// v0.10 (issue #80): each onboarding mood choice now has a stable
-// `id`, the verbatim `text` the user tapped, AND the `score` the rest
-// of the app needs (insights chart, mood emoji picker, etc.). Storing
-// only the score collapsed three distinct labels (Anxious / Tired /
-// Overwhelmed / Lonely) to 2 and made Today re-greet the user with a
-// different word. The id is the canonical round-trip key; `text` is
-// the visible label; `score` is the analytics/chart value.
-const MOOD_CHOICES: { id: MoodId; text: string; score: MoodScore }[] = [
-  { id: 'anxious', text: 'Anxious', score: 2 },
-  { id: 'numb', text: 'Numb', score: 1 },
-  { id: 'tired', text: 'Tired', score: 2 },
-  { id: 'hopeful', text: 'Hopeful', score: 5 },
-  { id: 'overwhelmed', text: 'Overwhelmed', score: 2 },
-  { id: 'okay', text: 'Okay', score: 4 },
-  { id: 'lonely', text: 'Lonely', score: 2 },
-];
-
-function moodById(id: MoodId) {
-  return MOOD_CHOICES.find((m) => m.id === id) ?? null;
-}
-const GOALS: { id: Goal; label: string }[] = [
-  { id: 'sleep', label: '💤 Sleep better' },
-  { id: 'quiet_thoughts', label: '🧠 Quiet my thoughts' },
-  { id: 'less_anxious', label: '💪 Feel less anxious' },
-  { id: 'self_kindness', label: '❤️ Be kinder to me' },
-  { id: 'process_feelings', label: '📓 Process feelings' },
-  { id: 'build_habit', label: '✨ Build a habit' },
-  { id: 'just_explore', label: '🎯 Just see' },
-];
-const MASCOTS: { id: Mascot; emoji: string }[] = [
-  { id: 'moon', emoji: '🌙' },
-  { id: 'fox', emoji: '🦊' },
-  { id: 'turtle', emoji: '🐢' },
-  { id: 'bee', emoji: '🐝' },
-];
-const TONES: { id: Tone; label: string; sample: string; bg: string }[] = [
-  {
-    id: 'soft',
-    label: '🕊 Soft',
-    sample: '"That sounds heavy. Want to sit with it?"',
-    bg: colors.lavender50,
-  },
-  {
-    id: 'direct',
-    label: '⚡ Direct',
-    sample: '"Let\'s do the thought record. 3 minutes."',
-    bg: colors.peach50,
-  },
-  {
-    id: 'playful',
-    label: '✨ Playful',
-    sample: '"your brain is doing the thing again lol"',
-    bg: colors.yellow50,
-  },
-];
+import type { Goal, Mascot, MoodId, Tone, UserProfile } from '../types';
+import {
+  GOALS,
+  MASCOTS,
+  MOOD_CHOICES,
+  TONES,
+  moodById,
+} from '../data/preferences';
 
 interface Props {
   onDone: () => void;
@@ -239,7 +198,7 @@ export function OnboardingScreen({ onDone }: Props) {
               {GOALS.map((g) => (
                 <Pill
                   key={g.id}
-                  label={g.label}
+                  label={g.onboardingLabel}
                   selected={goals.includes(g.id)}
                   onPress={() => toggleGoal(g.id)}
                   size="medium"
@@ -283,7 +242,7 @@ export function OnboardingScreen({ onDone }: Props) {
                   key={tn.id}
                   onPress={() => setTone(tn.id)}
                   accessibilityRole="button"
-                  accessibilityLabel={`${tn.label} tone. ${tn.sample}`}
+                  accessibilityLabel={`${tn.onboardingLabel} tone. ${tn.onboardingSample}`}
                   accessibilityState={{ selected: tone === tn.id }}
                   style={[
                     styles.toneCard,
@@ -291,8 +250,8 @@ export function OnboardingScreen({ onDone }: Props) {
                     tone === tn.id && styles.toneCardActive,
                   ]}
                 >
-                  <Text style={styles.toneLabel}>{tn.label}</Text>
-                  <Text style={styles.toneSample}>{tn.sample}</Text>
+                  <Text style={styles.toneLabel}>{tn.onboardingLabel}</Text>
+                  <Text style={styles.toneSample}>{tn.onboardingSample}</Text>
                 </Pressable>
               ))}
             </View>

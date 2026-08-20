@@ -18,34 +18,16 @@ import { Card } from '../components/Card';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import { initialMoodLabel as formatInitialMood } from '../components/MoodPicker';
+// v0.10 (issue #76): MASCOTS / TONES / GOALS moved to
+// src/data/preferences.ts as the single source of truth. This
+// screen consumes the plain `label` / `sample` variants
+// (without the onboarding emoji prefix).
+import { GOALS, MASCOTS, TONES } from '../data/preferences';
 import type { Goal, Mascot, Tone, UserProfile } from '../types';
 
 type Props = {
   navigation: { goBack: () => void };
 };
-
-const MASCOTS: { id: Mascot; emoji: string }[] = [
-  { id: 'moon', emoji: '🌙' },
-  { id: 'fox', emoji: '🦊' },
-  { id: 'turtle', emoji: '🐢' },
-  { id: 'bee', emoji: '🐝' },
-];
-
-const TONES: { id: Tone; label: string; sample: string }[] = [
-  { id: 'soft', label: 'Soft', sample: 'Want to sit with it together?' },
-  { id: 'direct', label: 'Direct', sample: "Let's do the thought record." },
-  { id: 'playful', label: 'Playful', sample: 'your brain is doing the thing again lol' },
-];
-
-const GOALS: { id: Goal; label: string }[] = [
-  { id: 'sleep', label: 'Sleep better' },
-  { id: 'quiet_thoughts', label: 'Quiet my thoughts' },
-  { id: 'less_anxious', label: 'Feel less anxious' },
-  { id: 'self_kindness', label: 'Be kinder to me' },
-  { id: 'process_feelings', label: 'Process feelings' },
-  { id: 'build_habit', label: 'Build a habit' },
-  { id: 'just_explore', label: 'Just see' },
-];
 
 export function SettingsScreen({ navigation }: Props) {
   const [original, setOriginal] = useState<UserProfile | null>(null);
