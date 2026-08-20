@@ -12,6 +12,7 @@
 // no new design surfaces.
 import React, { useEffect, useState, useCallback } from 'react';
 import { Alert, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Card } from '../components/Card';
 import { colors, space, type as t, radius } from '../theme';
@@ -52,28 +53,81 @@ export function SettingsScreen({ navigation }: Props) {
   const [tone, setTone] = useState<Tone>('soft');
   const [goals, setGoals] = useState<Goal[]>([]);
 
-  useEffect(() => {
-    (async () => {
-      const p = await storage.getProfile();
-      if (!p) return;
-      setOriginal(p);
-      setMascot(p.mascot);
-      setTone(p.tone);
-      setGoals([...p.goals]);
-    })();
-  }, []);
+  // v0.10 (issue #59): re-read on every focus, not just mount.
+  // Without this, a user who resets Fernly or changes profile
+  // settings elsewhere would land on stale data when they
+  // return to this screen. The safe read distinguishes
+  // "no profile" (legitimate empty) from "read error" so a
+  // storage failure doesn't silently mark the form dirty
+  // against an outdated baseline.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        const result = await storage.getProfileSafe();
+        if (cancelled) return;
+        if (result.kind === 'error') {
+          // Don't clear the form on a read failure — the user
+          // may have a real profile sitting in local state and
+          // the failure is transient. Show the error inline so
+          // they know the next save may also fail.
+          setSaveError(`Couldn't read your profile: ${result.reason}. Try again later.`);
+          return;
+        }
+        if (result.kind === 'empty') return;
+        setSaveError(null);
+        setOriginal(result.profile);
+        setMascot(result.profile.mascot);
+        setTone(result.profile.tone);
+        setGoals([...result.profile.goals]);
+      })();
+      return () => {
+        cancelled = true;
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
+
+  // v0.10 (issue #59): goal comparison now uses set semantics so
+  // reordering the user's picks doesn't mark the form dirty.
+  // JSON.stringify on a sorted copy is a string-comparison hack
+  // that happens to work for string IDs but is fragile (e.g.
+  // fails if Goal is ever a numeric enum, fails on a Goal
+  // surface that returns IDs in different orders from storage
+  // vs UI). The set-based comparison reads more clearly and is
+  // explicit about ignoring order.
+  function sameGoals(a: Goal[], b: Goal[]): boolean {
+    if (a.length !== b.length) return false;
+    const set = new Set(a);
+    for (const g of b) if (!set.has(g)) return false;
+    return true;
+  }
 
   const dirty =
     original &&
     (mascot !== original.mascot ||
       tone !== original.tone ||
-      JSON.stringify(goals) !== JSON.stringify([...original.goals].sort()));
+      !sameGoals(goals, original.goals));
 
   const toggleGoal = (id: Goal) =>
     setGoals((g) => (g.includes(id) ? g.filter((x) => x !== id) : g.length < 3 ? [...g, id] : g));
 
+  // v0.10 (issue #59): single-flight save with retryable error
+  // + unsaved-change preservation. The `saving` flag prevents a
+  // double-tap on the Save button from racing the first write;
+  // the disabled style on the button reinforces the visual
+  // state. A failure leaves `original` unchanged so the form
+  // still reflects the unsaved state — the user can retry or
+  // close (with the dialog) and pick up exactly where they left
+  // off.
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   const save = useCallback(async () => {
     if (!original) return;
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
     // Preserve initialMood + initialMoodLabel (issue #80). Both are
     // read-only fields that the user set in onboarding; settings edits
     // mascot/tone/goals and leaves the start-state mood untouched.
@@ -89,12 +143,25 @@ export function SettingsScreen({ navigation }: Props) {
         ? { initialMood: original.initialMood }
         : {}),
     };
-    await storage.setProfile(next);
-    setOriginal(next);
-    Alert.alert('Saved', 'Your preferences are updated.', [
-      { text: 'OK', onPress: () => navigation.goBack() },
-    ]);
-  }, [original, mascot, tone, goals, navigation]);
+    try {
+      // v0.10 (issue #52): strict variant. A write failure is
+      // surfaced inline; the form stays dirty so the user can
+      // retry without re-entering their changes.
+      await storage.setProfileStrict(next);
+      setOriginal(next);
+      setSaving(false);
+      Alert.alert('Saved', 'Your preferences are updated.', [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
+    } catch (e) {
+      setSaving(false);
+      setSaveError(
+        e instanceof Error
+          ? `Couldn't save: ${e.message}. Your changes are still on this screen — try again.`
+          : "Couldn't save. Your changes are still on this screen — try again.",
+      );
+    }
+  }, [original, mascot, tone, goals, navigation, saving]);
 
   const exportData = useCallback(async () => {
     try {
@@ -334,19 +401,45 @@ export function SettingsScreen({ navigation }: Props) {
           </Pressable>
         </Card>
 
+        {/* v0.10 (issue #59): inline save error with retry. The
+            error keeps the form dirty so the user can re-tap Save
+            without re-entering their changes. Renders above the
+            save CTA so the user sees it before tapping. */}
+        {saveError && (
+          <View
+            style={styles.saveErrorBanner}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="assertive"
+          >
+            <Text style={styles.saveErrorText}>{saveError}</Text>
+          </View>
+        )}
+
         <Pressable
           onPress={save}
-          disabled={!dirty}
+          disabled={!dirty || saving}
           accessibilityRole="button"
-          accessibilityLabel="Save changes"
-          accessibilityState={{ disabled: !dirty }}
+          accessibilityLabel={
+            saving
+              ? 'Saving changes'
+              : dirty
+                ? 'Save changes'
+                : 'No changes yet'
+          }
+          accessibilityState={{ disabled: !dirty || saving, busy: saving }}
           style={({ pressed }) => [
             styles.saveCta,
-            !dirty && styles.saveCtaDisabled,
-            pressed && styles.saveCtaPressed,
+            (!dirty || saving) && styles.saveCtaDisabled,
+            pressed && !saving && styles.saveCtaPressed,
           ]}
         >
-          <Text style={styles.saveCtaText}>{dirty ? 'Save changes' : 'No changes yet'}</Text>
+          <Text style={styles.saveCtaText}>
+            {saving
+              ? 'Saving…'
+              : dirty
+                ? 'Save changes'
+                : 'No changes yet'}
+          </Text>
         </Pressable>
     </ScreenContainer>
   );
@@ -437,6 +530,17 @@ const styles = StyleSheet.create({
   },
   actionPressed: { opacity: 0.85 },
   actionText: { ...t.body, color: colors.text },
+
+  saveErrorBanner: {
+    marginHorizontal: space.s6,
+    marginBottom: space.s2,
+    backgroundColor: colors.rose50,
+    borderRadius: radius.md,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.rose100,
+  },
+  saveErrorText: { ...t.small, color: colors.warn, textAlign: 'center' },
 
   saveCta: {
     marginHorizontal: space.s6,

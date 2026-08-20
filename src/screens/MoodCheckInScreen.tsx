@@ -6,6 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { MoodPicker, moodLabel } from '../components/MoodPicker';
 import { Card } from '../components/Card';
+import { Pill } from '../components/Pill';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import { localDateString } from '../util/date';
@@ -106,17 +107,18 @@ export function MoodCheckInScreen() {
         </Text>
         <View style={styles.words}>
           {QUICK_WORDS.map((w) => (
-            <Pressable
+            // v0.10 (issue #75): migrated to the shared Pill
+            // primitive. Small size matches the 13pt quick-word
+            // text. Selected state carries the same accentSelected
+            // / paper contrast pair as the OnboardingScreen
+            // mood/goal pills.
+            <Pill
               key={w}
+              label={w}
+              selected={word === w}
               onPress={() => setWord(w === word ? undefined : w)}
-              accessibilityRole="button"
-              accessibilityLabel={w}
-              accessibilityState={{ selected: word === w }}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              style={[styles.wordPill, word === w && styles.wordPillActive]}
-            >
-              <Text style={[styles.wordText, word === w && styles.wordTextActive]}>{w}</Text>
-            </Pressable>
+              size="small"
+            />
           ))}
         </View>
       </Card>

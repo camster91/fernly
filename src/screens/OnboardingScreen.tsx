@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ScreenContainer } from '../components/ScreenContainer';
+import { Pill } from '../components/Pill';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import type { Goal, Mascot, MoodId, MoodScore, Tone, UserProfile } from '../types';
@@ -215,19 +216,17 @@ export function OnboardingScreen({ onDone }: Props) {
             <Text style={styles.sub}>Helps Fernly meet you where you are.</Text>
             <View style={styles.pillRow}>
               {MOOD_CHOICES.map((m) => (
-                <Pressable
+                // v0.10 (issue #75): migrated to the shared Pill
+                // primitive. The old hand-rolled Pressable+Text
+                // duplicated the contrast + 2px border + 700-weight
+                // selected state. Pill centralizes that.
+                <Pill
                   key={m.id}
+                  label={m.text}
+                  selected={mood === m.id}
                   onPress={() => setMood(m.id)}
-                  accessibilityRole="button"
-                  accessibilityLabel={m.text}
-                  accessibilityState={{ selected: mood === m.id }}
-                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  style={[styles.pill, mood === m.id && styles.pillActive]}
-                >
-                  <Text style={[styles.pillText, mood === m.id && styles.pillTextActive]}>
-                    {m.text}
-                  </Text>
-                </Pressable>
+                  size="medium"
+                />
               ))}
             </View>
           </Step>
@@ -238,19 +237,13 @@ export function OnboardingScreen({ onDone }: Props) {
             <Text style={styles.sub}>Pick up to 3.</Text>
             <View style={styles.pillRow}>
               {GOALS.map((g) => (
-                <Pressable
+                <Pill
                   key={g.id}
+                  label={g.label}
+                  selected={goals.includes(g.id)}
                   onPress={() => toggleGoal(g.id)}
-                  accessibilityRole="button"
-                  accessibilityLabel={g.label}
-                  accessibilityState={{ selected: goals.includes(g.id) }}
-                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  style={[styles.pill, goals.includes(g.id) && styles.pillActive]}
-                >
-                  <Text style={[styles.pillText, goals.includes(g.id) && styles.pillTextActive]}>
-                    {g.label}
-                  </Text>
-                </Pressable>
+                  size="medium"
+                />
               ))}
             </View>
           </Step>
