@@ -82,6 +82,16 @@ const ASYNC_KEYS = {
   // launch. Entries older than 6h are dropped on read; persistence is
   // best-effort (same swallow-on-error policy as the rest of AsyncStorage).
   verifiedUrls: '@fernly/verified-urls',
+  // v0.11 (issue #41): chat backend feature flag override. Set
+  // '1' to force-enable the real chat backend for this device
+  // (internal cohort); '0' to force-disable; unset to defer to env.
+  // Plain string so we don't need JSON parsing on a single-byte
+  // value — see chat-feature-flag.ts.
+  chatBackendOverride: '@fernly/chat-backend-override',
+  // v0.11 (issue #41): chat usage counter. JSON object with the
+  // shape consumed by chat-usage.ts. Stored unencrypted (low
+  // sensitivity — these are just timestamps + counts).
+  chatUsage: '@fernly/chat-usage',
 } as const;
 
 // ---- SecureStore keys (encrypted, device-bound) ----
@@ -444,6 +454,41 @@ export const storage = {
 
   async setVerifiedUrls(map: Record<string, number>) {
     await asyncSet(ASYNC_KEYS.verifiedUrls, map);
+  },
+
+  // --- Generic AsyncStorage string get/set (v0.11) ---
+  // Exposed so chat-feature-flag.ts can persist the override
+  // without depending on AsyncStorage directly. Best-effort
+  // (matches the existing asyncGetString / asyncSetString policy).
+  async asyncGetString(key: string): Promise<string | null> {
+    return asyncGetString(key);
+  },
+  async asyncSetString(key: string, value: string): Promise<void> {
+    await asyncSetString(key, value);
+  },
+
+  // --- Chat backend override (v0.11, issue #41) ---
+  // String-keyed: '1' = force on, '0' = force off, '' / null = no
+  // preference. Kept as a plain string (not JSON) because there's
+  // nothing to serialize — the chat-feature-flag module owns the
+  // truthy/falsey contract.
+  async getChatBackendOverride(): Promise<string | null> {
+    return asyncGetString(ASYNC_KEYS.chatBackendOverride);
+  },
+  async setChatBackendOverride(value: string): Promise<void> {
+    await asyncSetString(ASYNC_KEYS.chatBackendOverride, value);
+  },
+
+  // --- Chat usage counter (v0.11, issue #41) ---
+  // Backing store for the per-day / per-minute rate limiter in
+  // chat-usage.ts. The shape is owned by that module — this method
+  // just returns `unknown` so the parser is colocated with the
+  // decision logic, not with storage.
+  async getChatUsage(): Promise<unknown> {
+    return asyncGet<unknown>(ASYNC_KEYS.chatUsage);
+  },
+  async setChatUsage(usage: unknown): Promise<void> {
+    await asyncSet(ASYNC_KEYS.chatUsage, usage);
   },
 
   // --- Chat history: per-session keys (ENCRYPTED SecureStore) ---

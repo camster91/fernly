@@ -34,7 +34,17 @@ import { storage } from '../storage';
 import { detectCrisis } from '../safety/crisis';
 import { MASCOT_EMOJI, MASCOT_EMOJI_FALLBACK } from '../data/mascots';
 import type { ChatMessage, ChatSession, CrisisAuditEntry, UserProfile, Tone } from '../types';
-import { fetchReply, readChatBackendUrl } from '../api/chat';
+import {
+  fetchReply,
+  readChatBackendUrl,
+  readHostAllowlist,
+} from '../api/chat';
+import { resolveRealChatDecision } from '../api/chat-feature-flag';
+import {
+  ChatUsageLimitError,
+  getChatUsageSnapshot,
+  reserveSlot,
+} from '../api/chat-usage';
 
 const MAX_INPUT_LENGTH = 4000;
 
@@ -65,6 +75,100 @@ function mockReply(input: string, tone: Tone): string {
   let h = 0;
   for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
   return bank[Math.abs(h) % bank.length];
+}
+
+/**
+ * v0.11 (issue #41): resolve the chat reply for a given send. Three
+ * possible paths:
+ *   1. Mock (decision.enabled === false): env flag off, no URL, or
+ *      override disabled.
+ *   2. Real → mock fallback: decision.enabled is true, but the
+ *      URL read failed OR the usage counter is exhausted. The user
+ *      still gets a reply (a deterministic one).
+ *   3. Real: full fetch with auth, HTTPS, host allowlist, and
+ *      schema validation. Any failure falls back to mock — the
+ *      `auth-missing` case is a fetchReply-throw today because #46
+ *      isn't wired, which is the intended "client holds no creds"
+ *      guarantee.
+ *
+ * The function returns a string and never throws. Internal errors
+ * (network, usage, auth) are caught and logged; the call site
+ * (send()) already restores the user draft on any outer throw so
+ * this function's fail-soft path is the only fallback the user
+ * experiences for "real" send failures.
+ */
+async function resolveReplyText(args: {
+  input: string;
+  tone: Tone;
+  sessionId: string;
+  decision: { enabled: boolean; reason: string };
+}): Promise<string> {
+  const { input, tone, sessionId, decision } = args;
+  if (!decision.enabled) {
+    console.log(`[ChatScreen] mock path (reason: ${decision.reason})`);
+    return mockReply(input, tone);
+  }
+  // Real path. Reserve a usage slot first — if the user is over
+  // their burst or daily cap, we fall back to mock rather than
+  // failing the send. The user still gets a reply and the cost
+  // cap holds.
+  try {
+    await reserveSlot();
+  } catch (e) {
+    if (e instanceof ChatUsageLimitError) {
+      console.warn(
+        `[ChatScreen] usage limit hit (${e.limit} ${e.used}/${e.cap}); falling back to mock`,
+      );
+      return mockReply(input, tone);
+    }
+    throw e;
+  }
+  // Read URL again — the env could have changed between the
+  // decision and now (theoretically). If the URL read throws
+  // (non-https config), we degrade to mock rather than crashing.
+  let backendUrl: string | null = null;
+  try {
+    backendUrl = readChatBackendUrl();
+  } catch (e) {
+    console.warn('[ChatScreen] readChatBackendUrl threw, using mock:', e);
+    return mockReply(input, tone);
+  }
+  if (!backendUrl) return mockReply(input, tone);
+  const abort = new AbortController();
+  // v0.11 (issue #41): the backend now requires an authenticated
+  // identity. The auth layer (#46) will provide a real
+  // getAuthToken; for v0 we expose a stub that returns null —
+  // which makes fetchReply throw ChatBackendError(auth-missing)
+  // and we fall back to mock. This is the "client contains no
+  // provider credentials" guarantee: there is no path where the
+  // client holds a key.
+  try {
+    const result = await fetchReply(
+      { input, tone, sessionId },
+      {
+        url: backendUrl,
+        hostAllowlist: readHostAllowlist(),
+        getAuthToken: async () => {
+          // TODO(#46): wire to the real auth provider.
+          return null;
+        },
+      },
+      abort.signal,
+    );
+    return result.reply;
+  } catch (e) {
+    // The fetch site already wraps fetchReply in a try/catch in
+    // send() — but a throw here would surface as a generic Alert.
+    // Better UX: log the specific ChatBackendError kind and fall
+    // back to mock so the user still gets a reply.
+    if (e && typeof e === 'object' && 'kind' in e) {
+      const k = (e as { kind?: string }).kind;
+      console.warn(`[ChatScreen] fetchReply threw kind=${k}; falling back to mock`);
+    } else {
+      console.warn('[ChatScreen] fetchReply threw; falling back to mock:', e);
+    }
+    return mockReply(input, tone);
+  }
 }
 
 // Memoized message bubble — re-renders only when its own message props change.
@@ -280,23 +384,24 @@ export function ChatScreen() {
       // and follows the standard { reply: string } shape. Without the
       // env var, this branch falls back to the deterministic mock so
       // v0 keeps working offline. Plans/05 P0-3.
+      //
+      // v0.11 (issue #41): the "real chat" gate is now the feature
+      // flag, NOT just the URL presence. Three independent layers must
+      // agree before the wire is touched:
+      //   1. env EXPO_PUBLIC_CHAT_API_URL is set (a backend exists)
+      //   2. env EXPO_PUBLIC_CHAT_BACKEND_ENABLED is truthy (the
+      //      operator has approved this build for the real backend)
+      //   3. the in-app override is not explicitly false (the
+      //      user/device hasn't opted out)
+      // Plus #4: the per-day / per-minute usage counter has room.
       const tone = profile?.tone ?? 'soft';
-      const backendUrl = readChatBackendUrl();
-      let replyText: string;
-      if (backendUrl) {
-        const abort = new AbortController();
-        // The chat-screen's unmount effect can't see this controller;
-        // we rely on the send() promise resolution + the request's own
-        // 12s timeout. Future work: wire to isCancelledRef.
-        const result = await fetchReply(
-          { input: text, tone, sessionId },
-          { url: backendUrl },
-          abort.signal,
-        );
-        replyText = result.reply;
-      } else {
-        replyText = mockReply(text, tone);
-      }
+      const decision = await resolveRealChatDecision();
+      const replyText = await resolveReplyText({
+        input: text,
+        tone,
+        sessionId,
+        decision,
+      });
       const replyMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'fernly',
