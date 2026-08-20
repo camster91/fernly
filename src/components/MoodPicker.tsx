@@ -46,15 +46,32 @@ export function MoodPicker({ value, onChange }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // v0.10 (issue #62): row now wraps and gaps so 6 pills fit
+  // on a 320px viewport at default text size. Previously the
+  // row was a non-wrapping flex row with fixed-width 44pt
+  // pills — at 200% text the row was 264pt wide (no problem
+  // there) but the labels around it overflowed on smaller
+  // devices. The gap + flexWrap keeps the row clean and
+  // predictable across the device matrix.
   row: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     paddingHorizontal: space.s6,
     marginBottom: space.s4,
+    gap: 8,
   },
   pill: {
-    width: 44,
-    height: 44,
+    // v0.10 (issue #62): 44pt minimum tap target per WCAG 2.5.5.
+    // Previously a hardcoded 44×44, which is fine on its own
+    // but the absence of flexBasis made the wrap layout
+    // uneven. flexBasis '15%' on a 6-item row gives a roughly
+    // even split with a little margin for the gap.
+    flexBasis: '15%',
+    flexGrow: 1,
+    minHeight: 44,
+    aspectRatio: 1,
+    maxWidth: 60,
     borderRadius: radius.full,
     backgroundColor: colors.paper2,
     borderWidth: 1,

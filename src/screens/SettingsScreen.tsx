@@ -11,7 +11,7 @@
 // on "Save". Reuses Card + the same visual tokens as elsewhere —
 // no new design surfaces.
 import React, { useEffect, useState, useCallback } from 'react';
-import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Card } from '../components/Card';
 import { colors, space, type as t, radius } from '../theme';
@@ -197,12 +197,15 @@ export function SettingsScreen({ navigation }: Props) {
   }
 
   return (
+    // v0.10 (issue #62): the ScreenContainer owns vertical
+    // scrolling. The previous version had ScreenContainer
+    // (which scrolls) wrapping a ScrollView — two nested
+    // scroll owners meant the outer one intercepted gestures
+    // and the inner one never received them, so the screen
+    // effectively couldn't scroll past the first card on
+    // short viewports. Removed the inner ScrollView; the
+    // ScreenContainer handles the entire content.
     <ScreenContainer scroll>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 100 }}
-        showsVerticalScrollIndicator={false}
-      >
         <View style={styles.header}>
           {/* v0.10 (issue #69): visible close button at the top of
               the header so the user has a deterministic exit
@@ -345,7 +348,6 @@ export function SettingsScreen({ navigation }: Props) {
         >
           <Text style={styles.saveCtaText}>{dirty ? 'Save changes' : 'No changes yet'}</Text>
         </Pressable>
-      </ScrollView>
     </ScreenContainer>
   );
 }

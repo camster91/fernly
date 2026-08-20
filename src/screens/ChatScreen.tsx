@@ -887,7 +887,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: radius.full,
-    minHeight: 36,
+    // v0.10 (issue #62): minHeight 44pt (WCAG 2.5.5) — was 36pt
+    // which fell below the recommended tap target. The
+    // shadow + label adds visual weight; the larger touch
+    // area is easier to hit one-handed on the chat surface.
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
     boxShadow: '0 4px 12px rgba(42, 36, 56, 0.18)',

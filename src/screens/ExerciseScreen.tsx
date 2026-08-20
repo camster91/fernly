@@ -160,7 +160,14 @@ function BoxBreathingScreen() {
           : 1.0;
 
   return (
-    <ScreenContainer scroll={false}>
+    // v0.10 (issue #62): the bubble + the Begin/Pause CTA
+    // + the exit button are too tall for a 568pt viewport at
+    // 200% text scale. Switched to a scrolling container so
+    // the CTA never clips off the bottom edge on short
+    // devices. The bubble keeps its fixed visual size — the
+    // scroll only matters when the surrounding chrome is too
+    // tall for the viewport.
+    <ScreenContainer scroll>
       <View style={styles.header}>
         <Text style={styles.eyebrow}>
           BODY · 4 MIN · CYCLE {Math.min(completed + 1, TOTAL_CYCLES)} OF {TOTAL_CYCLES}

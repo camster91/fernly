@@ -58,10 +58,25 @@ function Tabs() {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
+        // v0.10 (issue #62): the previous tab bar had a hard
+        // 80pt height + 10pt labels, which clipped at 200%
+        // text scale (a 10pt label scaled 2x = 20pt needs more
+        // than 16pt vertical room). Removed the fixed `height`
+        // and bumped labels to 12pt; the bar's height is now
+        // driven by its content + the safe-area padding.
+        tabBarStyle: {
+          backgroundColor: colors.paper2,
+          borderTopWidth: 1,
+          borderTopColor: colors.line,
+          paddingTop: 8,
+          paddingBottom: 24,
+        },
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.textMuted,
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
+        // v0.10 (issue #62): labels are 12pt (was 10pt) so they
+        // remain legible at the default scale and don't shrink
+        // when scaled up.
+        tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
       }}
     >
       <Tab.Screen
@@ -340,13 +355,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   hydrationErrorCtaText: { ...t.bodyBold, color: colors.paper },
-  tabBar: {
-    backgroundColor: colors.paper2,
-    borderTopWidth: 1,
-    borderTopColor: colors.line,
-    paddingTop: 8,
-    paddingBottom: 24,
-    height: 80,
-  },
   tabIcon: { alignItems: 'center', justifyContent: 'center' },
+  // v0.10 (issue #62): removed the legacy `tabBar` style that
+  // locked the bar to a fixed 80pt height. The bar style now
+  // lives inline in the screenOptions above so the height is
+  // derived from content rather than a hardcoded pixel value.
 });
