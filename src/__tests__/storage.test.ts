@@ -397,6 +397,43 @@ describe('strict writes and session enumeration (issue #52)', () => {
   });
 });
 
+// v0.10 (issue #70): per-session delete used by the chat history
+// sheet. Removes the session key, the index entry, and clears
+// the active id if it pointed at the deleted session.
+describe('single-session delete (issue #70)', () => {
+  it('removes a session, the index entry, and clears the active pointer', async () => {
+    const a = await storage.createChatSession([message('keep')]);
+    const b = await storage.createChatSession([message('drop')]);
+
+    const ok = await storage.deleteChatSession(b.id);
+
+    expect(ok).toBe(true);
+    expect(await storage.getChatSession(b.id)).toBeNull();
+    expect(await storage.getChatSession(a.id)).not.toBeNull();
+    // b was the active session (last created). deleteChatSession
+    // clears the active pointer so the next chat mount doesn't
+    // point at the deleted one. The user will land on a fresh
+    // session; `a` is still in the index for them to switch to.
+    expect(await storage.getActiveSessionId()).toBeNull();
+
+    const index = JSON.parse(asyncData.get(SESSION_INDEX) ?? '[]');
+    expect(index).toContain(sessionKey(a.id));
+    expect(index).not.toContain(sessionKey(b.id));
+  });
+
+  it('returns false when the session id does not exist', async () => {
+    const ok = await storage.deleteChatSession('does-not-exist');
+    expect(ok).toBe(false);
+  });
+
+  it('clears the active id when the deleted session was active', async () => {
+    const only = await storage.createChatSession([message('only')]);
+    expect(await storage.getActiveSessionId()).toBe(only.id);
+    await storage.deleteChatSession(only.id);
+    expect(await storage.getActiveSessionId()).toBeNull();
+  });
+});
+
 describe('legacy blob migration', () => {
   it('migrates valid legacy sessions, deletes legacy blob, and indexes new keys', async () => {
     const old = [session('legacy-a'), session('legacy-b')];

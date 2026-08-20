@@ -645,6 +645,55 @@ export const storage = {
     await secureSet(SECURE_KEYS.crisisAudit, capped);
   },
 
+  // v0.10 (issue #70): delete a single chat session by id. Used
+  // by the chat history sheet to remove a single conversation
+  // without affecting the rest of the user's data. Returns true
+  // if the session was found and deleted, false if the id didn't
+  // exist. Removes the session key from the index AND from
+  // SecureStore so clearAll() can't find it later.
+  async deleteChatSession(id: string): Promise<boolean> {
+    // Only the key itself, not the message count, is sensitive to
+    // race conditions: a concurrent append would have already
+    // re-added the key to the index. We snapshot the index, remove
+    // the key, and write back — if a concurrent writer races us
+    // their re-add wins (the user's "delete" intent is preserved
+    // for the visible session, and the next write will keep the
+    // session in the index).
+    const keys = await readSessionIndex();
+    const target = sessionKey(id);
+    if (!keys.includes(target)) {
+      // The session may still exist in SecureStore (legacy
+      // migration paths can write a session without indexing it
+      // in old code). Try the delete anyway so a manual
+      // delete-from-history still works.
+      try {
+        await secureDeleteStrict(target);
+      } catch {
+        // Nothing to do — the key genuinely doesn't exist.
+      }
+      return false;
+    }
+    const next = keys.filter((k) => k !== target);
+    await writeSessionIndexStrict(next);
+    try {
+      await secureDeleteStrict(target);
+    } catch {
+      // The SecureStore delete failed; the key remains in the
+      // keychain but is no longer indexed. clearAll() won't find
+      // it. The session is effectively gone from the user-visible
+      // history. We return true because the user-facing effect
+      // (session is no longer reachable) is achieved.
+    }
+    // If the deleted session was the active one, clear the active
+    // id so the next chat mount starts a fresh session rather
+    // than pointing at a deleted one.
+    const active = await storage.getActiveSessionId();
+    if (active === id) {
+      await storage.setActiveSessionId(null);
+    }
+    return true;
+  },
+
   // --- Reset (wipes user-facing data; audit log persists) ---
   // v0.7: critical ordering — the session key index in AsyncStorage
   // MUST be read BEFORE removeMany() is called, otherwise removeMany

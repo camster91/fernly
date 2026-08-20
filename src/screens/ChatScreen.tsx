@@ -18,8 +18,10 @@ import {
   FlatList,
   KeyboardAvoidingView,
   ListRenderItem,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -114,6 +116,12 @@ export function ChatScreen() {
   // silently reset. The screen tracks a focused hydration error so
   // the user can see what happened and retry.
   const [chatLoadError, setChatLoadError] = useState<string | null>(null);
+  // v0.10 (issue #70): history sheet open state. Set true when
+  // the user taps "History"; reset on close. `historyTick` is a
+  // reload counter that bumps on every send/delete so the sheet
+  // re-enumerates the session list next time it opens.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyTick, setHistoryTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -210,6 +218,9 @@ export function ChatScreen() {
         sessionCreateRef.current = null;
         sessionId = session.id;
         setActiveSessionId(session.id);
+        // v0.10 (issue #70): new session just created — bump the
+        // history reload tick so it appears in the list next open.
+        setHistoryTick((t) => t + 1);
       }
 
       const userMsg: ChatMessage = {
@@ -233,6 +244,9 @@ export function ChatScreen() {
         if (afterUser) setMessages(afterUser.messages);
         const afterBlocked = await storage.appendMessageToSession(sessionId, blocked);
         if (afterBlocked) setMessages(afterBlocked.messages);
+        // v0.10 (issue #70): bump the history reload tick so the
+        // history sheet sees the updated message count next open.
+        setHistoryTick((t) => t + 1);
         setCrisisMatched(verdict.matchedPhrase);
         setCrisisVisible(true);
         // Append a crisis audit entry. Survives clearAll(); stored in
@@ -293,6 +307,9 @@ export function ChatScreen() {
       if (afterUser) setMessages(afterUser.messages);
       const afterReply = await storage.appendMessageToSession(sessionId, replyMsg);
       if (afterReply) setMessages(afterReply.messages);
+      // v0.10 (issue #70): bump the history reload tick so the
+      // history sheet sees the updated message count next open.
+      setHistoryTick((t) => t + 1);
     } catch (err) {
       // v0.9: restore the draft so the user can retry, and surface
       // the failure via Alert instead of silently swallowing. The
@@ -389,6 +406,19 @@ export function ChatScreen() {
     [mascotEmoji],
   );
 
+  // v0.10 (issue #70): start a fresh conversation. The active
+  // session id is cleared so the next send creates a new
+  // ChatSession. Any unsent draft text in the input is preserved
+  // (the user might want to re-send the same message into a
+  // different conversation).
+  async function startNewConversation() {
+    if (isSendingRef.current) return;
+    setActiveSessionId(null);
+    setMessages([]);
+    setCrisisVisible(false);
+    setCrisisMatched(undefined);
+  }
+
   return (
     <ScreenContainer scroll={false} edges={['top']}>
       {/* v0.10 (issue #79): visible signal that a focused read failed.
@@ -408,6 +438,69 @@ export function ChatScreen() {
           </Text>
         </View>
       )}
+
+      {/* v0.10 (issue #70): visible chat controls. The "New"
+          button creates a fresh conversation; the "History"
+          button opens the history sheet for switching /
+          deleting prior sessions. Both sit above the message
+          list so the user can find them before typing. */}
+      <View style={styles.chatControls}>
+        <Pressable
+          onPress={startNewConversation}
+          accessibilityRole="button"
+          accessibilityLabel="Start a new conversation"
+          accessibilityHint="Saves the current session and starts fresh"
+          style={({ pressed }) => [styles.chatCtrlBtn, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={styles.chatCtrlBtnText}>+ New</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setHistoryOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Open chat history"
+          accessibilityHint="Browse, switch, or delete past conversations"
+          style={({ pressed }) => [styles.chatCtrlBtn, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={styles.chatCtrlBtnText}>History</Text>
+        </Pressable>
+      </View>
+
+      {/* v0.10 (issue #70): history sheet — see ChatHistorySheet
+          for the data model. Mounted at the end of the screen so
+          it can float over the message list when open. */}
+      <ChatHistorySheet
+        visible={historyOpen}
+        activeSessionId={activeSessionId}
+        onClose={() => setHistoryOpen(false)}
+        onSwitch={async (id) => {
+          setHistoryOpen(false);
+          if (id === activeSessionId) return;
+          // Persist the new active id and load the messages.
+          await storage.setActiveSessionId(id);
+          const session = await storage.getChatSession(id);
+          if (session) {
+            setActiveSessionId(session.id);
+            setMessages(session.messages);
+          }
+          // v0.10 (issue #70): switched active session — no
+          // reload tick bump needed since the session list itself
+          // is unchanged (only the active highlight moves).
+        }}
+        onDelete={async (id) => {
+          const ok = await storage.deleteChatSession(id);
+          if (ok && id === activeSessionId) {
+            // The deleted session was the active one — clear
+            // local state so the user starts fresh.
+            setActiveSessionId(null);
+            setMessages([]);
+          }
+          // Force the history sheet to re-enumerate next open.
+          setHistoryTick((t) => t + 1);
+          return ok;
+        }}
+        // Re-enumerate on any open so newly-sent messages appear.
+        reloadTick={historyTick}
+      />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -516,6 +609,207 @@ export function ChatScreen() {
   );
 }
 
+// v0.10 (issue #70): history sheet — modal showing every chat
+// session with date, message count, and active highlight. Tapping
+// a row switches the active session; long-press (or a dedicated
+// Delete button) deletes it with confirmation. Previews do NOT
+// show message text — only the start date and a count — to
+// prevent the user's exact phrasing from being exposed when the
+// list is visible to a screen reader or shoulder-surfer.
+function ChatHistorySheet({
+  visible,
+  activeSessionId,
+  onClose,
+  onSwitch,
+  onDelete,
+  reloadTick,
+}: {
+  visible: boolean;
+  activeSessionId: string | null;
+  onClose: () => void;
+  onSwitch: (id: string) => void;
+  onDelete: (id: string) => Promise<boolean>;
+  reloadTick: number;
+}) {
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      const { sessions: all, unreadable } = await storage.getAllChatSessions();
+      if (cancelled) return;
+      setSessions(all);
+      setLoading(false);
+      if (unreadable.length > 0) {
+        setError(`${unreadable.length} session(s) couldn't be read.`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // reloadTick is a no-op dep that the parent bumps after a
+    // delete or send so the sheet re-enumerates the list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, reloadTick]);
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+      accessibilityViewIsModal
+    >
+      <View style={historyStyles.backdrop}>
+        <View style={historyStyles.sheet}>
+          <View style={historyStyles.headerRow}>
+            <Text style={historyStyles.title} accessibilityRole="header">
+              Chat history
+            </Text>
+            <Pressable
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close history"
+              style={({ pressed }) => [historyStyles.closeBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={historyStyles.closeBtnText}>Close</Text>
+            </Pressable>
+          </View>
+
+          {loading && (
+            <View style={historyStyles.center}>
+              <Text style={historyStyles.centerText}>Loading…</Text>
+            </View>
+          )}
+          {error && !loading && (
+            <View
+              style={historyStyles.errorBanner}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+            >
+              <Text style={historyStyles.errorText}>{error}</Text>
+            </View>
+          )}
+          {!loading && sessions.length === 0 && (
+            <View style={historyStyles.center}>
+              <Text style={historyStyles.emptyEmoji}>💬</Text>
+              <Text style={historyStyles.emptyTitle}>No conversations yet.</Text>
+              <Text style={historyStyles.emptySub}>
+                Start a chat and it'll show up here. New conversations don't delete older ones.
+              </Text>
+            </View>
+          )}
+
+          {!loading && sessions.length > 0 && (
+            <ScrollView style={historyStyles.list}>
+              {sessions.map((s) => {
+                const isActive = s.id === activeSessionId;
+                const startDate = new Date(s.startedAt);
+                const dateLabel = isToday(startDate)
+                  ? `Today, ${formatTime(startDate)}`
+                  : isYesterday(startDate)
+                    ? `Yesterday, ${formatTime(startDate)}`
+                    : `${formatDate(startDate)}, ${formatTime(startDate)}`;
+                return (
+                  <View
+                    key={s.id}
+                    style={[historyStyles.row, isActive && historyStyles.rowActive]}
+                  >
+                    <Pressable
+                      onPress={() => onSwitch(s.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        isActive
+                          ? `Current conversation, ${s.messages.length} messages, started ${dateLabel}`
+                          : `Switch to conversation from ${dateLabel}, ${s.messages.length} messages`
+                      }
+                      accessibilityState={{ selected: isActive }}
+                      style={({ pressed }) => [
+                        historyStyles.rowMain,
+                        pressed && { opacity: 0.85 },
+                      ]}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={historyStyles.rowDate}>{dateLabel}</Text>
+                        <Text style={historyStyles.rowMeta}>
+                          {s.messages.length} message
+                          {s.messages.length === 1 ? '' : 's'}
+                          {isActive ? ' · current' : ''}
+                        </Text>
+                      </View>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        Alert.alert(
+                          'Delete this conversation?',
+                          'This permanently removes the chat from this device. Cannot be undone.',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Delete',
+                              style: 'destructive',
+                              onPress: async () => {
+                                const ok = await onDelete(s.id);
+                                if (!ok) {
+                                  Alert.alert(
+                                    "Couldn't delete",
+                                    'Please try again, or close and reopen the app.',
+                                  );
+                                }
+                              },
+                            },
+                          ],
+                        );
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete conversation from ${dateLabel}`}
+                      style={({ pressed }) => [
+                        historyStyles.deleteBtn,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                    >
+                      <Text style={historyStyles.deleteBtnText}>Delete</Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function isToday(d: Date): boolean {
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+function isYesterday(d: Date): boolean {
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  return (
+    d.getFullYear() === y.getFullYear() &&
+    d.getMonth() === y.getMonth() &&
+    d.getDate() === y.getDate()
+  );
+}
+function formatDate(d: Date): string {
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function formatTime(d: Date): string {
+  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   // v0.10 (issue #79): chat load-error chip. Sits above the
@@ -530,6 +824,28 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   loadErrorText: { ...t.small, color: colors.text, textAlign: 'center' },
+
+  // v0.10 (issue #70): chat control row sits above the message
+  // list. Two compact buttons — New + History — so the user has
+  // conversation controls without leaving the chat surface.
+  chatControls: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: space.s6,
+    paddingVertical: space.s2,
+  },
+  chatCtrlBtn: {
+    minHeight: 44,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.lavender300,
+    backgroundColor: colors.paper2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatCtrlBtnText: { ...t.bodyBold, color: colors.lavender700, fontSize: 13 },
   empty: { paddingHorizontal: space.s6, paddingTop: 80, alignItems: 'center' },
   emptyEmoji: { fontSize: 48, marginBottom: space.s5 },
   emptyTitle: { ...t.title, fontSize: 24, color: colors.text, marginBottom: space.s2 },
@@ -629,4 +945,87 @@ const styles = StyleSheet.create({
   },
   micSoonText: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
   micIcon: { color: colors.paper, fontSize: 18, fontWeight: '700' },
+});
+
+// v0.10 (issue #70): history sheet styles. Separate stylesheet
+// to keep the chat-screen styles readable.
+const historyStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: colors.scrim,
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: colors.paper,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    paddingHorizontal: space.s6,
+    paddingTop: space.s5,
+    paddingBottom: space.s7,
+    maxHeight: '85%',
+    minHeight: 320,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: space.s4,
+  },
+  title: { ...t.title, fontSize: 22, color: colors.text },
+  closeBtn: {
+    minHeight: 44,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: radius.full,
+  },
+  closeBtnText: { ...t.bodyBold, color: colors.lavender700, fontSize: 14 },
+  center: { alignItems: 'center', paddingVertical: space.s7 },
+  centerText: { ...t.body, color: colors.textMuted },
+  emptyEmoji: { fontSize: 48, marginBottom: space.s3 },
+  emptyTitle: { ...t.title, fontSize: 18, color: colors.text, marginBottom: 4 },
+  emptySub: {
+    ...t.small,
+    color: colors.textMuted,
+    textAlign: 'center',
+    maxWidth: 280,
+  },
+  errorBanner: {
+    backgroundColor: colors.yellow100,
+    borderRadius: radius.md,
+    padding: 12,
+    marginBottom: space.s3,
+  },
+  errorText: { ...t.small, color: colors.text, textAlign: 'center' },
+  list: { maxHeight: 480 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.paper2,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    marginBottom: space.s2,
+    overflow: 'hidden',
+  },
+  rowActive: { borderColor: colors.accentSelected, borderWidth: 2 },
+  rowMain: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    minHeight: 56,
+    justifyContent: 'center',
+  },
+  rowDate: { ...t.bodyBold, color: colors.text, fontSize: 14, marginBottom: 2 },
+  rowMeta: { ...t.small, color: colors.textMuted, fontSize: 12 },
+  deleteBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minHeight: 56,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: colors.line,
+  },
+  deleteBtnText: { ...t.bodyBold, color: colors.warn, fontSize: 13 },
 });
