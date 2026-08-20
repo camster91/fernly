@@ -1,0 +1,56 @@
+{
+  "cli": {
+    "version": ">= 13.0.0",
+    "appCommitSource": "local"
+  },
+  "build": {
+    "base": {
+      "node": "20.x",
+      "npm": "10.x",
+      "env": {
+        "EXPO_NO_TELEMETRY": "1"
+      },
+      "android": {
+        "resourceClass": "default"
+      },
+      "ios": {
+        "resourceClass": "default",
+        "simulator": false
+      }
+    },
+    "preview": {
+      "extends": "base",
+      "distribution": "internal",
+      "channel": "preview",
+      "ios": {
+        "autoIncrement": "build-number"
+      },
+      "android": {
+        "autoIncrement": "versionCode"
+      }
+    },
+    "production": {
+      "extends": "base",
+      "distribution": "store",
+      "ios": {
+        "autoIncrement": "build-number"
+      },
+      "android": {
+        "autoIncrement": "versionCode"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppIdentifier": "com.fernly.app",
+        "appleTeamId": "$(APPLE_TEAM_ID)"
+      },
+      "android": {
+        "track": "internal",
+        "releaseStatus": "completed",
+        "serviceAccountKeyPath": "./.secrets/google-play.json"
+      }
+    }
+  }
+}

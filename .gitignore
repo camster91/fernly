@@ -40,3 +40,17 @@ yarn-error.*
 /ios
 /android
 .hermes/
+
+# v0.10 (issue #53): release evidence (build IDs, commit
+# SHA, actor) is written to .release-evidence/ at the end
+# of every successful release. The dir is gitignored so the
+# evidence file doesn't churn on every release.
+.release-evidence/
+
+# EAS / signing secrets
+.secrets/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
