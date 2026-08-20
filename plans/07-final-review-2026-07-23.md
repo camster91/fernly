@@ -1,5 +1,14 @@
 # Fernly — Final Review (2026-07-23, end-of-arc)
 
+> **STATUS: HISTORICAL.** Captures the state of `camster91/fernly`
+> at the close of the 2026-07-23 codebase-improvement arc. Gates
+> green, 22 of 34 kanban items shipped, no security-critical
+> regressions. The follow-up audit (2026-08-17, issues #40-#82)
+> is the current state of work; this document is preserved as the
+> arc-closure record.
+
+---
+
 Captures the state of `camster91/fernly` at the close of the
 codebase-improvement arc. Gates green, 22 of 34 kanban items
 shipped, no security-critical regressions.

@@ -24,38 +24,100 @@ See [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md). Short version: we work with vuln
 ```bash
 git clone https://github.com/camster91/fernly.git
 cd fernly
-npm ci
+npm ci --legacy-peer-deps
 npm run web      # or: npx expo start --web --port 8084
 ```
 
 Node 20 (`.nvmrc`) and npm 10+. Both are pinned in `package.json:engines`.
 
-## Workflow
+**Note on the legacy-peer-deps flag:** the dependency baseline currently pins
+`eslint@^10.8.0` (from a Dependabot bump) while `@react-native/eslint-config@0.86.1`
+peers on `eslint@^8 || ^9`. This is tracked in issue #58; the install flag
+works around the conflict until the upstream is fixed.
 
-1. Create a branch from `main`:
-   - `fix/<short-name>` for bug fixes
-   - `feat/<short-name>` for features
-   - `chore/<short-name>` for tooling, deps, docs
+## Workflow (issue-based delivery)
 
-2. Make your change. Run the gates:
+The repo uses an **issue-based delivery workflow** (issue #65). Every code
+change starts from a numbered GitHub issue and follows the same path.
 
-   ```bash
-   npm run typecheck    # tsc --noEmit
-   npm run lint         # eslint
-   npm run format       # prettier --write
-   npm test             # vitest + crisis corpus
-   ```
+### Branch naming
 
-3. Verify the web export builds:
+```
+agent/<issue-number>-short-description
+```
 
-   ```bash
-   npx expo export --platform web
-   ```
+Examples (from current branches on this repo):
 
-4. Open a PR with:
-   - The behavioral diff (if any)
-   - Test additions or rationale for omission
-   - Screenshots for any UI change
+- `agent/wave1-p0-quick-wins` (covers issues #54, #57, #66, #68, #72, #79, #80, #82)
+- `agent/wave2-strict-storage-and-modal-exits` (covers #52, #69, #70, #81)
+- `agent/58-restore-ci-baseline` (issue #58)
+
+One branch per independently reviewable work slice. **One primary issue per
+PR.** Multi-issue branches are OK for tightly coupled fixes; link the issues
+in the PR description.
+
+### Pull request lifecycle
+
+1. **Draft by default.** Open the PR as a draft so CI runs but the review
+   doesn't trigger yet. Mark ready only after the gates pass AND you've
+   self-reviewed the diff.
+2. **No direct pushes to `main`.** The `main` branch has branch
+   protections; force-pushes to it are rejected.
+3. **Close the issue only after every acceptance criterion passes in the
+   target environment.** Don't auto-close on PR merge — verify on a
+   device (or `expo export --platform web` for web-only fixes) and attach
+   evidence (screenshots, terminal output, test IDs).
+4. **New findings during delivery:** check open AND closed issues before
+   creating a child issue. Avoid duplicates.
+
+### Required PR description sections
+
+1. Linked issue and intended outcome
+2. Scope
+3. Out of scope
+4. User-visible behavior and required states
+5. Automated verification (`npm run ci`)
+6. Manual verification and screenshots
+7. Security and privacy review
+8. Accessibility review
+9. Responsive, performance, and compatibility review
+10. Data migration, rollback, and recovery
+11. Dependencies, credentials, external services, and approvals
+12. Known risks, deferred work, and target-environment acceptance
+
+### Required verification (run before marking the PR ready)
+
+```bash
+npm run typecheck    # tsc --noEmit
+npm run lint         # eslint
+npm run format:check # prettier --check
+npm run test         # vitest suite (187 tests across 4 files)
+npx expo export --platform web   # verifies the web build
+```
+
+For mobile-affecting work, the additional `expo prebuild --platform ios` /
+`expo prebuild --platform android` checks verify the native config hasn't
+drifted from `app.json`.
+
+### Release workflow (separate from delivery)
+
+The release pipeline (`.github/workflows/release.yml`) is governed by
+issue #53 and the `RELEASING.md` runbook. Release workflow changes go
+through the same issue-based flow as any other change — they do NOT
+bypass review by virtue of being release automation.
+
+### Emergency exception procedure
+
+If a critical fix must land outside the normal review flow, the owner
+documents the exception in the PR with:
+
+- Approver
+- Audit trail (timestamp + reason)
+- Expiry (follow-up issue before this expires)
+- Follow-up issue link
+
+This is narrow, time-limited, and auditable. The default path is
+"open a PR, follow the workflow, merge when green."
 
 ## Code conventions
 
@@ -63,7 +125,9 @@ Node 20 (`.nvmrc`) and npm 10+. Both are pinned in `package.json:engines`.
 - Theme tokens live in `src/theme.ts`. No bare hex literals in `src/` (the ESLint rule catches 6-digit hex; rgba strings still slip through — human review).
 - Date handling goes through `src/util/date.ts` (`localDateString` / `parseLocalDate`). Direct `toISOString().slice(0, 10)` calls in screens are a UTC bug.
 - Async storage goes through `src/storage.ts`. Direct `AsyncStorage` calls in screens skip the audit-log + migration logic.
-- The crisis detector is documented inline in `src/safety/crisis.ts`. **Don't add patterns without updating `scripts/test-crisis-edge-cases.mjs`** — the corpus is the spec.
+- The crisis detector is documented inline in `src/safety/crisis.ts`. The
+  pattern corpus lives in `src/util/__tests__/crisis.detector.test.ts` —
+  add a test case whenever you add or change a pattern.
 
 ## Project structure
 
@@ -72,19 +136,21 @@ fernly/
 ├─ App.tsx                       # top-level wrapper (ErrorBoundary, phone-frame on web)
 ├─ index.ts                      # Expo registerRootComponent
 ├─ src/
-│  ├─ components/                # Card, ScreenContainer, CrisisModal, etc.
-│  ├─ screens/                    # 8 screens + SettingsScreen
-│  ├─ nav/RootNav.tsx            # navigation
-│  ├─ storage.ts                  # AsyncStorage + SecureStore
-│  ├─ safety/crisis.ts            # detector (clinical-UX-critical)
-│  ├─ theme.ts                    # color/space/type tokens
-│  ├─ data/                       # exercises, mascots
-│  ├─ util/                       # date helpers (today: date.ts)
-│  └─ __tests__/                  # vitest
-├─ scripts/                       # crisis mjs runners + edge-cases
-├─ plans/                         # audit + kanban docs
-├─ spec/                          # UI design mock (spec/index.html)
-├─ app.json                       # Expo config
+│  ├─ components/                # Card, ScreenContainer, CrisisModal, MoodPicker, ErrorBoundary
+│  ├─ screens/                   # 8 screens (Today, Chat, Practice, Insights, Profile,
+│  │                             #   Onboarding, MoodCheckIn, Exercise, Settings)
+│  ├─ nav/RootNav.tsx            # navigation (gate + tab + modal stack)
+│  ├─ storage.ts                 # AsyncStorage + SecureStore (typed, schema-versioned)
+│  ├─ safety/crisis.ts           # detector (clinical-UX-critical)
+│  ├─ api/chat.ts                # chat backend adapter
+│  ├─ theme.ts                   # color/space/type tokens
+│  ├─ data/                      # exercises, mascots
+│  ├─ util/                      # date helpers (localDateString / parseLocalDate)
+│  ├─ util/__tests__/            # vitest for util + crisis detector
+│  └─ __tests__/                 # vitest for storage + chat API
+├─ plans/                        # audit + kanban docs
+├─ spec/                         # UI design mock (spec/index.html) + 30 screen mocks
+├─ app.json                      # Expo config
 ├─ tsconfig.json
 ├─ eslint.config.js
 └─ package.json

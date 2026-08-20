@@ -34,10 +34,12 @@
 /src/screens/SettingsScreen.tsx               @camster91
 
 # — Crisis detector patterns and the test corpus that pins them.
-#   These patterns are clinical-UX decisions, not engineering ones. —
+#   These patterns are clinical-UX decisions, not engineering ones.
+#   The corpus moved to src/util/__tests__/crisis.detector.test.ts
+#   in the v0.9 arc (the legacy scripts/test-crisis*.mjs runners
+#   were removed). —
 
-/scripts/test-crisis.mjs                       @camster91
-/scripts/test-crisis-edge-cases.mjs            @camster91
+/src/util/__tests__/crisis.detector.test.ts    @camster91
 /src/safety/crisis.ts                          @camster91
 
 # — Default ownership for everything else lives below this line —

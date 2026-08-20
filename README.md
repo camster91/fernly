@@ -37,14 +37,16 @@ npx expo start --ios
 
 ## What's shipped (v0)
 
-- [x] **Onboarding** — 5 steps, real validation, persists profile
-- [x] **Today** — greeting, streak strip, 3 context cards
+- [x] **Onboarding** — 5 steps, real validation, persists profile + initial mood
+- [x] **Today** — daypart-aware greeting, streak strip, 3 context cards
 - [x] **Mood check-in** — 6-emoji picker, quick-word tags, persisted to AsyncStorage
-- [x] **Chat** — empty state, deterministic tone-aware mock replies, mic button toggle
+- [x] **Chat** — empty state, deterministic tone-aware mock replies, history sheet, per-session delete
 - [x] **Practice** — 8 exercises listed, box breathing fully built (live 4-4-4-4 cycle)
-- [x] **Insights** — real SVG line chart from mood data, average stat
-- [x] **Profile** — mascot avatar, stats, 6 settings rows
-- [x] **Crisis detection** — keyword + soft-signal detector, always-wins modal, 18/18 unit cases pass
+- [x] **Insights** — real SVG line chart from mood data, average stat, screen-reader summary
+- [x] **Profile** — mascot avatar, stats, 6 settings rows, full Settings screen
+- [x] **Settings** — mascot/tone/goal editor, JSON export, legal & safety modal
+- [x] **Crisis detection** — keyword + soft-signal detector, always-wins modal, 120+ test cases
+- [x] **Tests** — 187 vitest cases across 4 files (storage, chat API, date utils, crisis detector)
 
 ## What's NOT shipped yet
 

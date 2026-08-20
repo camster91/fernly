@@ -45,9 +45,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test:crisis": "vitest run src/util/__tests__/crisis.detector.test.ts",
     "test:unit": "vitest run",
-    "test": "npm run test:crisis && npm run test:unit",
+    "test": "vitest run",
     "ci": "npm run typecheck && npm run lint && npm run format:check && npm run test"
   },
   "private": true

@@ -28,7 +28,13 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        # v0.10 (issue #58): --legacy-peer-deps works around the
+        # eslint 10 / @react-native/eslint-config 0.86 peer-conflict
+        # until the upstream is fixed. Without the flag, npm ci
+        # fails on the current dep baseline. The dep audit step
+        # below still runs and will catch any production
+        # vulnerabilities even with peer-deps relaxed.
+        run: npm ci --legacy-peer-deps
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
@@ -42,12 +48,18 @@ jobs:
       - name: Prettier check
         run: npm run format:check
 
-      - name: Crisis detector tests
-        run: npm test
+      - name: Test suite (vitest)
+        # v0.10 (issue #58): was `npm test` which ran the crisis
+        # corpus twice (once via test:crisis, once via test:unit).
+        # test:unit alone runs all four vitest files including
+        # crisis.detector.test.ts in a single Vitest pass.
+        run: npm run test:unit
 
-      - name: Expo Doctor (best-effort)
-        run: npx expo install --check || true
-        continue-on-error: true
+      # v0.10 (issue #58): previously `expo install --check || true`
+      # converted dependency drift into success. Now it fails
+      # the job so a drift PR can't merge.
+      - name: Expo dependency compatibility check
+        run: npx expo install --check
 
   # Web bundle gate: catches runtime-only errors that typecheck/lint/test
   # miss — e.g. react vs react-dom version mismatch (audit C4), missing
@@ -70,7 +82,11 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        # v0.10 (issue #58): see note in the quality job. The
+        # legacy-peer-deps flag is required until the eslint /
+        # @react-native/eslint-config peer conflict is resolved
+        # upstream.
+        run: npm ci --legacy-peer-deps
 
       # Build the web bundle. Failing here means the web build is broken
       # even if typecheck/lint pass — the most common cause in this repo
@@ -116,7 +132,11 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        # v0.10 (issue #58): see note in the quality job. The
+        # legacy-peer-deps flag is required until the eslint /
+        # @react-native/eslint-config peer conflict is resolved
+        # upstream.
+        run: npm ci --legacy-peer-deps
 
       # expo prebuild --no-install skips `pod install` and Gradle sync.
       # We only need the generated Info.plist + AndroidManifest.xml paths
