@@ -397,6 +397,125 @@ describe('strict writes and session enumeration (issue #52)', () => {
   });
 });
 
+// v0.10 (issue #56): partial-failure recovery, idempotency,
+// and migration edge cases for the storage layer.
+//
+// The issue calls out: "Migration could orphan, duplicate, or
+// delete data. Keep legacy/index representations until
+// post-write verification and make recovery idempotent."
+// These tests pin the recovery semantics so a future
+// refactor doesn't accidentally regress the privacy promise
+// (encrypted chat history surviving a "Reset Fernly").
+describe('migration, idempotency, and recovery (issue #56)', () => {
+  it('clearAll is idempotent — calling it twice is safe', async () => {
+    await storage.createChatSession([message('one')]);
+    await storage.clearAll();
+    // Second call should not throw, and the index should
+    // remain absent (no error from a missing-key remove).
+    const result = await storage.clearAll();
+    expect(result.asyncStorageRemoved).toBeGreaterThanOrEqual(0);
+    expect(result.legacyDeleted).toBe(true);
+    expect(result.sessionsDeleted).toBe(0);
+    expect(result.sessionsFailed).toEqual([]);
+    expect(result.indexRemoved).toBe(true);
+  });
+
+  it('getAllChatSessions is idempotent and stable across repeated calls', async () => {
+    const a = await storage.createChatSession([message('a')]);
+    const b = await storage.createChatSession([message('b')]);
+    const first = await storage.getAllChatSessions();
+    const second = await storage.getAllChatSessions();
+    expect(first.sessions.map((s) => s.id)).toEqual(second.sessions.map((s) => s.id));
+    expect(first.unreadable).toEqual(second.unreadable);
+    expect(first.sessions.map((s) => s.id).sort()).toEqual([a.id, b.id].sort());
+  });
+
+  it('a corrupt secureData key survives an enumeration without throwing', async () => {
+    await storage.setChatSession(session('good'));
+    // Stuff garbage under known-bad keys AND inject them into
+    // the index, simulating a session that was written then
+    // corrupted in the keychain (the index points at it but
+    // the value is unreadable). The walker uses Promise.allSettled
+    // so a per-key failure is reported, not propagated.
+    asyncData.set(SESSION_INDEX, JSON.stringify([
+      sessionKey('good'),
+      sessionKey('bad-1'),
+      sessionKey('bad-2'),
+      sessionKey('good-2'),
+    ]));
+    secureData.set(sessionKey('bad-1'), '{not valid json');
+    secureData.set(sessionKey('bad-2'), JSON.stringify({ not: 'a session' }));
+    secureData.set(sessionKey('good-2'), JSON.stringify(session('good-2')));
+
+    const { sessions, unreadable } = await storage.getAllChatSessions();
+    const ids = sessions.map((s) => s.id).sort();
+    expect(ids).toEqual(['good', 'good-2'].sort());
+    expect(unreadable).toContain(sessionKey('bad-1'));
+    expect(unreadable).toContain(sessionKey('bad-2'));
+  });
+
+  it('appendMessageToSession on a session deleted mid-flight is safe', async () => {
+    const s = await storage.createChatSession([message('original')]);
+    // Simulate the session being deleted from under us (e.g. user
+    // hit "Reset" while a chat-send was in flight). The append
+    // should return null rather than re-create the session.
+    await storage.deleteChatSession(s.id);
+    const result = await storage.appendMessageToSession(s.id, message('late'));
+    expect(result).toBeNull();
+  });
+
+  it('setChatSessionStrict throws and does NOT re-index on failure', async () => {
+    // Inject a write failure on the next secureStore call.
+    const realSet = secureStore.setItemAsync.getMockImplementation();
+    secureStore.setItemAsync.mockImplementationOnce(async () => {
+      throw new Error('disk full');
+    });
+    await expect(
+      storage.setChatSessionStrict(session('should-fail')),
+    ).rejects.toThrow('disk full');
+    // Restore the mock so the rest of the test can write
+    // normally. The failed key must NOT be in the index.
+    secureStore.setItemAsync.mockImplementation(realSet!);
+    const index = JSON.parse(asyncData.get(SESSION_INDEX) ?? '[]');
+    expect(index).not.toContain(sessionKey('should-fail'));
+  });
+
+  it('legacy-blob migration: per-session write failure leaves the legacy blob intact', async () => {
+    // Simulate a v0 install with a legacy single-blob that
+    // contains two sessions. Inject a failure on the FIRST
+    // per-session write so migration aborts mid-flight. The
+    // legacy blob must remain in place so a retry on the
+    // next launch can re-attempt the migration.
+    const legacy = [
+      { ...session('legacy-a'), startedAt: '2026-06-01T00:00:00.000Z' },
+      { ...session('legacy-b'), startedAt: '2026-06-15T00:00:00.000Z' },
+    ];
+    secureData.set(LEGACY_CHATS, JSON.stringify(legacy));
+    // First call to setItemAsync on a SESSION key (not the
+    // legacy key) throws; subsequent calls succeed.
+    const realSet = secureStore.setItemAsync.getMockImplementation();
+    let sessionKeyWrites = 0;
+    secureStore.setItemAsync.mockImplementation(async (key, value, options) => {
+      if (key.startsWith('fernly.session.v1.')) {
+        sessionKeyWrites += 1;
+        if (sessionKeyWrites === 1) {
+          throw new Error('transient I/O');
+        }
+      }
+      return realSet!(key, value, options);
+    });
+    // getChats() is what the chat-screen mount calls; it
+    // triggers the migration. The first per-session write
+    // throws, which surfaces through the Promise.allSettled.
+    await storage.getChats();
+    // The legacy blob is still in place (migration aborts
+    // partway, doesn't delete the legacy until ALL writes
+    // succeed). The partially-migrated session is in
+    // SecureStore but the legacy blob is preserved.
+    expect(secureData.has(LEGACY_CHATS)).toBe(true);
+  });
+});
+
 // v0.10 (issue #70): per-session delete used by the chat history
 // sheet. Removes the session key, the index entry, and clears
 // the active id if it pointed at the deleted session.
