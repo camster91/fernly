@@ -3,21 +3,52 @@
 //   1. Onboarding gate — shows Onboarding until profile.onboarded = true
 //   2. Bottom tab navigator — Today / Chat / Practice / Insights / You
 // Plus a native stack inside for modal flows (MoodCheckIn, Exercise, Settings).
-import React, { useEffect, useState } from 'react';
+//
+// v0.10 (issue #67): the non-initial screens are lazy-loaded via
+// React.lazy + dynamic import. TodayScreen + OnboardingScreen stay
+// as static imports because they're the cold-start paths — a first
+// launch should not pay a Suspense round-trip before seeing the
+// first frame. The other 7 screens are loaded on demand the first
+// time the user navigates to them. ChatScreen is the largest of the
+// lazy set (carries the ChatHistorySheet, FlatList + render
+// machinery, react-native-svg-free, etc.) so its deferred load
+// produces the largest bundle delta.
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+// Eager imports — cold-start paths. Don't lazy these; the user
+// would wait a Suspense round-trip before seeing the first frame.
 import { TodayScreen } from '../screens/TodayScreen';
-import { ChatScreen } from '../screens/ChatScreen';
-import { PracticeScreen } from '../screens/PracticeScreen';
-import { ExerciseScreen } from '../screens/ExerciseScreen';
-import { InsightsScreen } from '../screens/InsightsScreen';
-import { ProfileScreen } from '../screens/ProfileScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
-import { SettingsScreen } from '../screens/SettingsScreen';
-import { MoodCheckInScreen } from '../screens/MoodCheckInScreen';
+// v0.10 (issue #67): lazy imports for non-initial screens. Each
+// is a separate JS chunk that Metro emits on first navigation.
+// The `.then(m => ({ default: m.ScreenName }))` wrapper handles
+// the named-export-vs-default-export interop that React.lazy
+// requires.
+const ChatScreen = lazy(() =>
+  import('../screens/ChatScreen').then((m) => ({ default: m.ChatScreen })),
+);
+const PracticeScreen = lazy(() =>
+  import('../screens/PracticeScreen').then((m) => ({ default: m.PracticeScreen })),
+);
+const ExerciseScreen = lazy(() =>
+  import('../screens/ExerciseScreen').then((m) => ({ default: m.ExerciseScreen })),
+);
+const InsightsScreen = lazy(() =>
+  import('../screens/InsightsScreen').then((m) => ({ default: m.InsightsScreen })),
+);
+const ProfileScreen = lazy(() =>
+  import('../screens/ProfileScreen').then((m) => ({ default: m.ProfileScreen })),
+);
+const SettingsScreen = lazy(() =>
+  import('../screens/SettingsScreen').then((m) => ({ default: m.SettingsScreen })),
+);
+const MoodCheckInScreen = lazy(() =>
+  import('../screens/MoodCheckInScreen').then((m) => ({ default: m.MoodCheckInScreen })),
+);
 import { colors, type as t, radius, space } from '../theme';
 import { storage, onStorageReset } from '../storage';
 
@@ -44,6 +75,49 @@ export type RootStackParamList = {
 
 const Tab = createBottomTabNavigator<TabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+// v0.10 (issue #67): small Suspense fallback shown while a
+// lazy chunk is fetching. Sized to fill the screen so the
+// navigator doesn't render an empty frame during the load.
+// The accessibilityRole + label announce the load to screen
+// readers so the user knows what's happening.
+function ScreenFallback() {
+  return (
+    <View
+      style={styles.screenFallback}
+      accessible
+      accessibilityRole="progressbar"
+      accessibilityLabel="Loading screen. One moment."
+    >
+      <ActivityIndicator size="large" color={colors.accent} />
+      <Text style={styles.screenFallbackText}>Loading…</Text>
+    </View>
+  );
+}
+
+// v0.10 (issue #67): withSuspense wraps a lazy component in a
+// Suspense boundary that renders ScreenFallback while the chunk
+// is fetching. Passes through all props so the navigator's
+// route params (e.g. Exercise.params.exerciseId) flow
+// unchanged. The cast is necessary because React.lazy's
+// `ComponentType` is unparameterized (P is `{}` by default)
+// while the navigator expects specific props (navigation,
+// route). The runtime behavior is identical — the navigator
+// passes the right props at runtime; TS just needs help
+// matching them statically.
+function withSuspense<P extends object>(
+  Component: React.LazyExoticComponent<React.ComponentType<any>>,
+): React.ComponentType<P> {
+  const Wrapped = (props: P) => (
+    <Suspense fallback={<ScreenFallback />}>
+      <Component {...(props as unknown as object)} />
+    </Suspense>
+  );
+  Wrapped.displayName = `withSuspense(${
+    (Component as { displayName?: string }).displayName ?? 'Lazy'
+  })`;
+  return Wrapped as React.ComponentType<P>;
+}
 
 function TabIcon({ glyph, focused }: { glyph: string; focused: boolean }) {
   return (
@@ -92,7 +166,7 @@ function Tabs() {
       />
       <Tab.Screen
         name="Chat"
-        component={ChatScreen}
+        component={withSuspense(ChatScreen)}
         options={{
           tabBarIcon: ({ focused }) => <TabIcon glyph="💬" focused={focused} />,
           tabBarAccessibilityLabel: 'Chat, tab 2 of 5',
@@ -100,7 +174,7 @@ function Tabs() {
       />
       <Tab.Screen
         name="Practice"
-        component={PracticeScreen}
+        component={withSuspense(PracticeScreen)}
         options={{
           tabBarIcon: ({ focused }) => <TabIcon glyph="🧘" focused={focused} />,
           tabBarAccessibilityLabel: 'Practice, tab 3 of 5',
@@ -108,7 +182,7 @@ function Tabs() {
       />
       <Tab.Screen
         name="Insights"
-        component={InsightsScreen}
+        component={withSuspense(InsightsScreen)}
         options={{
           tabBarIcon: ({ focused }) => <TabIcon glyph="📊" focused={focused} />,
           tabBarAccessibilityLabel: 'Insights, tab 4 of 5',
@@ -116,7 +190,7 @@ function Tabs() {
       />
       <Tab.Screen
         name="You"
-        component={ProfileScreen}
+        component={withSuspense(ProfileScreen)}
         options={{
           tabBarIcon: ({ focused }) => <TabIcon glyph="👤" focused={focused} />,
           tabBarAccessibilityLabel: 'Profile, tab 5 of 5',
@@ -293,16 +367,16 @@ export function RootNav() {
             <Stack.Screen name="Tabs" component={Tabs} />
             <Stack.Screen
               name="MoodCheckIn"
-              component={MoodCheckInScreen}
+              component={withSuspense(MoodCheckInScreen)}
               options={{ presentation: 'modal' }}
             />
-            <Stack.Screen name="Exercise" component={ExerciseScreen} />
+            <Stack.Screen name="Exercise" component={withSuspense(ExerciseScreen)} />
             {/* v0.9: real Settings screen — replaces the Alert.alert
                 placeholders that ProfileScreen was triggering for
                 "Export your data" / "Legal & safety" / etc. */}
             <Stack.Screen
               name="Settings"
-              component={SettingsScreen}
+              component={withSuspense(SettingsScreen)}
               options={{ presentation: 'modal' }}
             />
           </Stack.Navigator>
@@ -317,6 +391,16 @@ const styles = StyleSheet.create({
   loadingMark: { fontSize: 48, marginBottom: 12 },
   loadingText: { ...t.body, color: colors.text, marginTop: 12 },
   loadingHint: { ...t.small, color: colors.textMuted, marginTop: 4 },
+  // v0.10 (issue #67): screen-level Suspense fallback. The bg
+  // matches the screen so the navigator doesn't flash during
+  // the lazy chunk fetch.
+  screenFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg,
+  },
+  screenFallbackText: { ...t.body, color: colors.textMuted, marginTop: 12 },
   // v0.10 (issue #79): hydration-error screen styles. Padded top so
   // the title doesn't sit flush against the iOS notch / Android
   // status bar on first launch. No logo, no streak, no greeting — this
