@@ -495,14 +495,14 @@ describe('migration, idempotency, and recovery (issue #56)', () => {
     // legacy key) throws; subsequent calls succeed.
     const realSet = secureStore.setItemAsync.getMockImplementation();
     let sessionKeyWrites = 0;
-    secureStore.setItemAsync.mockImplementation(async (key, value, options) => {
+    secureStore.setItemAsync.mockImplementation(async (key: string, value: string) => {
       if (key.startsWith('fernly.session.v1.')) {
         sessionKeyWrites += 1;
         if (sessionKeyWrites === 1) {
           throw new Error('transient I/O');
         }
       }
-      return realSet!(key, value, options);
+      return realSet!(key, value);
     });
     // getChats() is what the chat-screen mount calls; it
     // triggers the migration. The first per-session write

@@ -19,9 +19,8 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { Pill } from '../components/Pill';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
-import type { Goal, Mascot, MoodId, Tone, UserProfile } from '../types';
+import type { Mascot, MoodId, Tone, UserProfile } from '../types';
 import {
-  GOALS,
   MASCOTS,
   MOOD_CHOICES,
   TONES,
@@ -45,11 +44,26 @@ export function OnboardingScreen({ onDone }: Props) {
   // profile can end up with a half-written goals array.
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [goals, setGoals] = useState<Goal[]>([]);
+  // v0.10 (issue #71): the goals picker step was removed; the
+  // onboarding flow no longer collects goals. The field is still
+  // persisted (as []) for type compatibility with v0.9 profiles
+  // and for SettingsScreen's read-only display of existing goals.
   const [mascot, setMascot] = useState<Mascot>('moon');
   const [tone, setTone] = useState<Tone>('soft');
 
-  const total = 5;
+  // v0.10 (issue #71): the goals step was removed because
+  // the field has no observable use — the Practice tab doesn't
+  // prioritize exercises by goal, the Insights tab doesn't
+  // surface goal-based themes, and the chat doesn't reference
+  // the goal at all. Asking the user for goals and then ignoring
+  // them is a privacy + trust failure (the plans/01 product
+  // plan deferred this to a future exercise-recs feature,
+  // tracked in #42). The stored `goals` field is kept for
+  // backward compatibility with v0.9 profiles; new profiles
+  // persist `goals: []`. The Settings screen still shows the
+  // existing goals as read-only so the user can see what
+  // they previously picked.
+  const total = 4;
   function next() {
     // v0.8: trigger save() at `total - 1` (= 4) so the "Begin" button on
     // step 5 (the last step) calls save() instead of advancing to a
@@ -70,10 +84,6 @@ export function OnboardingScreen({ onDone }: Props) {
     if (step > 0) setStep((s) => s - 1);
   }
 
-  function toggleGoal(id: Goal) {
-    setGoals((g) => (g.includes(id) ? g.filter((x) => x !== id) : g.length < 3 ? [...g, id] : g));
-  }
-
   async function save() {
     // v0.10 (issue #57): single-flight save. If a save is already
     // in-flight (rapid double-tap, keyboard Return + tap) the second
@@ -91,7 +101,12 @@ export function OnboardingScreen({ onDone }: Props) {
       name: name || 'Friend',
       mascot,
       tone,
-      goals,
+      // v0.10 (issue #71): the goals field is no longer
+      // collected during onboarding. New profiles start with an
+      // empty goals array. The field is kept on the type for
+      // backward compat with v0.9 profiles (which SettingsScreen
+      // still displays read-only).
+      goals: [],
       onboarded: true,
       createdAt: new Date().toISOString(),
       // v0.9: persist the score. Retained for backward compatibility
@@ -131,9 +146,8 @@ export function OnboardingScreen({ onDone }: Props) {
   const canAdvance = () => {
     if (step === 0) return name.trim().length > 0;
     if (step === 1) return mood !== null;
-    if (step === 2) return goals.length > 0;
-    if (step === 3) return true; // mascot has default
-    if (step === 4) return true; // tone has default
+    if (step === 2) return true; // mascot has default
+    if (step === 3) return true; // tone has default
     return true;
   };
 
@@ -171,7 +185,7 @@ export function OnboardingScreen({ onDone }: Props) {
         )}
 
         {step === 1 && (
-          <Step title="Right now, what's closest?" eyebrow="STEP 2 OF 5">
+          <Step title="Right now, what's closest?" eyebrow="STEP 2 OF 4">
             <Text style={styles.sub}>Helps Fernly meet you where you are.</Text>
             <View style={styles.pillRow}>
               {MOOD_CHOICES.map((m) => (
@@ -192,24 +206,7 @@ export function OnboardingScreen({ onDone }: Props) {
         )}
 
         {step === 2 && (
-          <Step title="What are you hoping for?" eyebrow="STEP 3 OF 5">
-            <Text style={styles.sub}>Pick up to 3.</Text>
-            <View style={styles.pillRow}>
-              {GOALS.map((g) => (
-                <Pill
-                  key={g.id}
-                  label={g.onboardingLabel}
-                  selected={goals.includes(g.id)}
-                  onPress={() => toggleGoal(g.id)}
-                  size="medium"
-                />
-              ))}
-            </View>
-          </Step>
-        )}
-
-        {step === 3 && (
-          <Step title="Pick a friend." eyebrow="STEP 4 OF 5">
+          <Step title="Pick a friend." eyebrow="STEP 3 OF 4">
             <Text style={styles.sub}>This is who you'll chat with.</Text>
             <View style={styles.mascotGrid}>
               {MASCOTS.map((m) => (
@@ -228,8 +225,8 @@ export function OnboardingScreen({ onDone }: Props) {
           </Step>
         )}
 
-        {step === 4 && (
-          <Step title="How should Fernly talk?" eyebrow="STEP 5 OF 5">
+        {step === 3 && (
+          <Step title="How should Fernly talk?" eyebrow="STEP 4 OF 4">
             {/* v0.9: "Change anytime in settings" was a lie in v0.8 —
                 settings is forward-compatible (Settings route is reserved
                 in RootStackParamList) but not yet shipped. Real options

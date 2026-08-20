@@ -33,7 +33,11 @@ export function SettingsScreen({ navigation }: Props) {
   const [original, setOriginal] = useState<UserProfile | null>(null);
   const [mascot, setMascot] = useState<Mascot>('moon');
   const [tone, setTone] = useState<Tone>('soft');
-  const [goals, setGoals] = useState<Goal[]>([]);
+  // v0.10 (issue #71): goals are no longer editable. The
+  // original-goals array on the profile is shown read-only
+  // in the Goals card so existing users can see what they
+  // previously picked. New profiles have goals: [].
+  // const goals state removed; goals come from `original`.
 
   // v0.10 (issue #59): re-read on every focus, not just mount.
   // Without this, a user who resets Fernly or changes profile
@@ -61,7 +65,10 @@ export function SettingsScreen({ navigation }: Props) {
         setOriginal(result.profile);
         setMascot(result.profile.mascot);
         setTone(result.profile.tone);
-        setGoals([...result.profile.goals]);
+        // v0.10 (issue #71): goals are read-only, so we read
+        // them from the profile into the local `original` state
+        // (which feeds the read-only Goals card) rather than
+        // maintaining a separate goals state.
       })();
       return () => {
         cancelled = true;
@@ -70,29 +77,17 @@ export function SettingsScreen({ navigation }: Props) {
     }, []),
   );
 
-  // v0.10 (issue #59): goal comparison now uses set semantics so
-  // reordering the user's picks doesn't mark the form dirty.
-  // JSON.stringify on a sorted copy is a string-comparison hack
-  // that happens to work for string IDs but is fragile (e.g.
-  // fails if Goal is ever a numeric enum, fails on a Goal
-  // surface that returns IDs in different orders from storage
-  // vs UI). The set-based comparison reads more clearly and is
-  // explicit about ignoring order.
-  function sameGoals(a: Goal[], b: Goal[]): boolean {
-    if (a.length !== b.length) return false;
-    const set = new Set(a);
-    for (const g of b) if (!set.has(g)) return false;
-    return true;
-  }
-
+  // v0.10 (issue #59): dirty check now only compares the
+  // editable fields (mascot, tone). Goals are read-only in
+  // v0.10+ (issue #71) so they don't participate in the
+  // comparison.
   const dirty =
     original &&
-    (mascot !== original.mascot ||
-      tone !== original.tone ||
-      !sameGoals(goals, original.goals));
+    (mascot !== original.mascot || tone !== original.tone);
 
-  const toggleGoal = (id: Goal) =>
-    setGoals((g) => (g.includes(id) ? g.filter((x) => x !== id) : g.length < 3 ? [...g, id] : g));
+  // v0.10 (issue #71): toggleGoal removed — goals are
+  // read-only in Settings. Users who want to clear them use
+  // "Reset Fernly" on the Profile screen.
 
   // v0.10 (issue #59): single-flight save with retryable error
   // + unsaved-change preservation. The `saving` flag prevents a
@@ -117,7 +112,10 @@ export function SettingsScreen({ navigation }: Props) {
       ...original,
       mascot,
       tone,
-      goals,
+      // v0.10 (issue #71): goals are read-only in Settings. The
+      // original.goals pass through unchanged. The user can
+      // clear them via "Reset Fernly" if desired.
+      goals: original.goals,
       ...(original.initialMoodLabel
         ? { initialMoodLabel: original.initialMoodLabel }
         : {}),
@@ -143,7 +141,7 @@ export function SettingsScreen({ navigation }: Props) {
           : "Couldn't save. Your changes are still on this screen — try again.",
       );
     }
-  }, [original, mascot, tone, goals, navigation, saving]);
+  }, [original, mascot, tone, navigation, saving]);
 
   const exportData = useCallback(async () => {
     try {
@@ -324,28 +322,34 @@ export function SettingsScreen({ navigation }: Props) {
           ))}
         </Card>
 
-        {/* Goals — multi-select, max 3. */}
-        <Card>
-          <Text style={styles.sectionLabel}>GOALS · {goals.length}/3</Text>
-          {GOALS.map((g) => {
-            const picked = goals.includes(g.id);
-            return (
-              <Pressable
-                key={g.id}
-                onPress={() => toggleGoal(g.id)}
-                accessibilityRole="button"
-                accessibilityLabel={`Toggle goal: ${g.label}`}
-                accessibilityState={{ selected: picked }}
-                style={[styles.goalRow, picked && styles.goalRowActive]}
-              >
-                <Text style={[styles.goalLabel, picked && styles.goalLabelActive]}>{g.label}</Text>
-              </Pressable>
-            );
-          })}
-          {goals.length >= 3 && (
-            <Text style={styles.helperText}>Three goals max — unpick one to choose another.</Text>
-          )}
-        </Card>
+        {/* v0.10 (issue #71): goals are now read-only in Settings.
+            v0.9 collected them during onboarding + allowed editing
+            here, but the field had no observable use in the app
+            (the Practice tab didn't prioritize by goal, the chat
+            didn't reference them). The onboarding flow no longer
+            asks (the question was removed in v0.10). Existing
+            v0.9 profiles still see their previously-picked goals
+            here as a read-only list — they can be cleared via
+            "Reset Fernly" if the user wants a fresh start. */}
+        {original && original.goals.length > 0 && (
+          <Card>
+            <Text style={styles.sectionLabel}>GOALS · {original.goals.length}</Text>
+            <Text style={styles.sub}>
+              You picked these when you signed up. We're not using them to personalize anything yet — that's coming in a future update.
+            </Text>
+            <View style={{ marginTop: space.s3, gap: 8 }}>
+              {original.goals.map((id) => {
+                const g = GOALS.find((x) => x.id === id);
+                if (!g) return null;
+                return (
+                  <View key={id} style={styles.goalRow} accessible accessibilityLabel={`Goal: ${g.label}`}>
+                    <Text style={styles.goalLabel}>{g.label}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </Card>
+        )}
 
         {/* Initial mood — read-only display when present.
             Surfaced for transparency but not editable (would lose
