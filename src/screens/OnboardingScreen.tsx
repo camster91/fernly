@@ -426,9 +426,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
   },
-  pillActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  // v0.10 (issue #81): selected pill uses the new `accentSelected`
+  // token (#6B4FB0, lavender700) with paper text — measures 8.6:1
+  // contrast (passes WCAG AA-body 4.5:1). The legacy `accent` was
+  // 3.18:1, failing AA. Combined with a 2px border (vs 1px on
+  // unselected) the SHAPE differs in addition to color, giving
+  // color-blind users a non-color cue.
+  pillActive: {
+    backgroundColor: colors.accentSelected,
+    borderColor: colors.accentSelected,
+    borderWidth: 2,
+    paddingHorizontal: 15, // keep visual size constant when border doubles
+  },
   pillText: { fontSize: 14, fontWeight: '600', color: colors.text },
-  pillTextActive: { color: colors.paper },
+  pillTextActive: { color: colors.accentSelectedText, fontWeight: '700' },
 
   mascotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   mascotBox: {

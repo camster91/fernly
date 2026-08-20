@@ -154,6 +154,48 @@ export function SettingsScreen({ navigation }: Props) {
     );
   }, []);
 
+  // v0.10 (issue #69): always-visible close affordance. Without
+  // this, the only way out of the modal is the Android back / iOS
+  // swipe-down / Escape key — which a user unfamiliar with the
+  // platform gesture may not discover. The button calls attemptClose
+  // which routes the dirty state through the standard
+  // Save/Discard/Keep-editing dialog (or just closes if clean).
+  function attemptClose() {
+    if (!dirty) {
+      navigation.goBack();
+      return;
+    }
+    Alert.alert(
+      'You have unsaved changes',
+      'Save your changes, discard them, or keep editing?',
+      [
+        { text: 'Keep editing', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => navigation.goBack(),
+        },
+        {
+          text: 'Save',
+          onPress: async () => {
+            // Re-use the same save() path. setProfileStrict
+            // (issue #52) throws on write failure, in which case
+            // the screen stays mounted and the unsaved state is
+            // preserved so the user can retry.
+            try {
+              await save();
+            } catch {
+              Alert.alert(
+                "Couldn't save",
+                'Your changes are still on this screen. Try again, or tap Close and choose Discard to leave without saving.',
+              );
+            }
+          },
+        },
+      ],
+    );
+  }
+
   return (
     <ScreenContainer scroll>
       <ScrollView
@@ -162,7 +204,25 @@ export function SettingsScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.eyebrow}>SETTINGS</Text>
+          {/* v0.10 (issue #69): visible close button at the top of
+              the header so the user has a deterministic exit
+              affordance before reaching the bottom Save button. */}
+          <View style={styles.headerTop}>
+            <Text style={styles.eyebrow}>SETTINGS</Text>
+            <Pressable
+              onPress={attemptClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close settings"
+              accessibilityHint={
+                dirty
+                  ? 'You have unsaved changes. Opens a save/discard dialog.'
+                  : 'Closes the settings screen'
+              }
+              style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={styles.closeBtnText}>Close</Text>
+            </Pressable>
+          </View>
           {/* v0.10 (issue #82): header semantics for screen-reader rotor. */}
           <Text style={styles.title} accessibilityRole="header">
             Your preferences
@@ -298,7 +358,24 @@ export function SettingsScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   header: { paddingHorizontal: space.s6, paddingTop: space.s6, paddingBottom: space.s4 },
-  eyebrow: { ...t.eyebrow, color: colors.lavender700, marginBottom: 6 },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  eyebrow: { ...t.eyebrow, color: colors.lavender700 },
+  // v0.10 (issue #69): close button. 44pt min height for tap
+  // target compliance (WCAG 2.5.5). Text-only so it doesn't fight
+  // the screen's pastel aesthetic.
+  closeBtn: {
+    minHeight: 44,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: radius.full,
+  },
+  closeBtnText: { ...t.bodyBold, color: colors.lavender700, fontSize: 14 },
   title: { ...t.title, fontSize: 26, color: colors.text, marginBottom: 6 },
   sub: { ...t.body, color: colors.textSoft, lineHeight: 22 },
 

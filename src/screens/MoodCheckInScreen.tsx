@@ -63,15 +63,32 @@ export function MoodCheckInScreen() {
 
   return (
     <ScreenContainer>
-      <View style={styles.header}>
-        <Text style={styles.eyebrow}>
-          {greetingForHour(new Date().getHours()).toUpperCase()} CHECK-IN
-        </Text>
-        {/* v0.10 (issue #82): header semantics for screen-reader rotor. */}
-        <Text style={styles.title} accessibilityRole="header">
-          How are you, really?
-        </Text>
-        <Text style={styles.sub}>No wrong answer. No streak loss. Just noticing.</Text>
+      {/* v0.10 (issue #69): header row with a visible Cancel
+          affordance. The user can already back out via the
+          platform's modal-close gesture, but a deterministic
+          visible Cancel button is required for keyboard, web,
+          and users unfamiliar with platform gestures. Cancel
+          never creates an entry — it's a pure nav.goBack(). */}
+      <View style={styles.headerRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.eyebrow}>
+            {greetingForHour(new Date().getHours()).toUpperCase()} CHECK-IN
+          </Text>
+          {/* v0.10 (issue #82): header semantics for screen-reader rotor. */}
+          <Text style={styles.title} accessibilityRole="header">
+            How are you, really?
+          </Text>
+          <Text style={styles.sub}>No wrong answer. No streak loss. Just noticing.</Text>
+        </View>
+        <Pressable
+          onPress={() => nav.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel mood check-in"
+          accessibilityHint="Discards the check-in and returns to Today"
+          style={({ pressed }) => [styles.cancelBtn, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={styles.cancelBtnText}>Cancel</Text>
+        </Pressable>
       </View>
 
       <MoodPicker value={score} onChange={setScore} />
@@ -123,7 +140,28 @@ export function MoodCheckInScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { paddingHorizontal: space.s6, paddingTop: space.s7, paddingBottom: space.s5 },
+  // v0.10 (issue #69): header row puts the eyebrow/title/sub on
+  // the left and a Cancel button on the right. The Cancel button
+  // is always visible so the user has a deterministic exit.
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: space.s6,
+    paddingTop: space.s7,
+    paddingBottom: space.s5,
+  },
+  // v0.10 (issue #69): Cancel button is text-only with 44pt min
+  // tap height for accessibility. Same lavender700 accent as the
+  // SettingsScreen Close button so users learn the pattern.
+  cancelBtn: {
+    minHeight: 44,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: radius.full,
+  },
+  cancelBtnText: { ...t.bodyBold, color: colors.lavender700, fontSize: 14 },
   eyebrow: { ...t.eyebrow, color: colors.lavender700, marginBottom: space.s2 },
   title: { ...t.title, color: colors.text, marginBottom: space.s2, fontSize: 28 },
   sub: { ...t.body, color: colors.textSoft },
@@ -145,9 +183,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
   },
-  wordPillActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  // v0.10 (issue #81): selected quick-word pill uses the new
+  // `accentSelected` token. Same reasoning as OnboardingScreen —
+  // 8.6:1 contrast + 2px border (vs 1px) gives a non-color cue.
+  wordPillActive: {
+    backgroundColor: colors.accentSelected,
+    borderColor: colors.accentSelected,
+    borderWidth: 2,
+    paddingHorizontal: 13, // keep visual size constant when border doubles
+  },
   wordText: { fontSize: 13, fontWeight: '600', color: colors.text },
-  wordTextActive: { color: colors.paper },
+  wordTextActive: { color: colors.accentSelectedText, fontWeight: '700' },
 
   cta: {
     marginHorizontal: space.s6,

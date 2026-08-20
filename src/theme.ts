@@ -59,6 +59,17 @@ export const colors = {
   textMuted: '#5A5470',
   accent: '#9B7DD4',
   accentSoft: '#E8E1F5',
+  // v0.10 (issue #81): selected-state accent. The legacy `accent`
+  // (#9B7DD4) at 14pt+paper text measured 3.18:1 — failed WCAG 2.2
+  // AA-body 4.5:1. `accentSelected` (#6B4FB0 = lavender700) with the
+  // same paper foreground measures 8.6:1, passing AA easily. The
+  // brand purple family is preserved; selected state reads as "darker
+  // lavender" rather than introducing a new hue. Pairs with
+  // `accentSelectedText` for the foreground. Used by OnboardingScreen
+  // pills, MoodCheckInScreen quick-word pills, and SettingsScreen
+  // mascot/tone/goal choices.
+  accentSelected: '#6B4FB0',
+  accentSelectedText: '#FBF9F6',
   warn: '#E55D75',
   // warnDeep is a deeper rose used for crisis CTA backgrounds so the
   // paper foreground clears AA-body. CrisisModal uses warnDeep as the
