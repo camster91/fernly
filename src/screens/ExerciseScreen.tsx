@@ -4,7 +4,8 @@
 import React, { useEffect, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { colors, space, type as t, radius } from '../theme';
@@ -30,7 +31,10 @@ export function ExerciseScreen() {
         <Text style={styles.eyebrow}>
           {ex.modality} · {ex.durationMin} MIN
         </Text>
-        <Text style={styles.title}>{ex.title}</Text>
+        {/* v0.10 (issue #82): header semantics for screen-reader rotor. */}
+        <Text style={styles.title} accessibilityRole="header">
+          {ex.title}
+        </Text>
         <Text style={styles.sub}>{ex.description}</Text>
       </View>
 
@@ -100,6 +104,11 @@ function BoxBreathingScreen() {
   const [running, setRunning] = useState(false);
   const [completed, setCompleted] = useState(0);
   const finished = completed >= TOTAL_CYCLES;
+  // v0.10 (issue #69): typed navigation so the End-session button
+  // can goBack() deterministically (rather than relying on the
+  // back-gesture alone, which users on web/keyboard may not
+  // discover).
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   useEffect(() => {
     if (!running || finished) return;
@@ -151,7 +160,14 @@ function BoxBreathingScreen() {
           : 1.0;
 
   return (
-    <ScreenContainer scroll={false}>
+    // v0.10 (issue #62): the bubble + the Begin/Pause CTA
+    // + the exit button are too tall for a 568pt viewport at
+    // 200% text scale. Switched to a scrolling container so
+    // the CTA never clips off the bottom edge on short
+    // devices. The bubble keeps its fixed visual size — the
+    // scroll only matters when the surrounding chrome is too
+    // tall for the viewport.
+    <ScreenContainer scroll>
       <View style={styles.header}>
         <Text style={styles.eyebrow}>
           BODY · 4 MIN · CYCLE {Math.min(completed + 1, TOTAL_CYCLES)} OF {TOTAL_CYCLES}
@@ -215,6 +231,30 @@ function BoxBreathingScreen() {
                 : 'Resume'}
         </Text>
       </Pressable>
+
+      {/* v0.10 (issue #69): visible exit affordance for the
+          exercise flow. The system back button still works (the
+          useEffect cleans up the timer on unmount), but a
+          deterministic visible button is required for keyboard,
+          web, and users unfamiliar with platform gestures. Label
+          changes between states so the user understands what
+          ending the session does. */}
+      <Pressable
+        onPress={() => nav.goBack()}
+        accessibilityRole="button"
+        accessibilityLabel={
+          finished
+            ? 'Done — return to practice'
+            : running
+              ? 'End session and return to practice'
+              : 'Exit without starting'
+        }
+        style={({ pressed }) => [styles.exitBtn, pressed && { opacity: 0.7 }]}
+      >
+        <Text style={styles.exitBtnText}>
+          {finished ? 'Done' : running ? 'End session' : 'Exit'}
+        </Text>
+      </Pressable>
     </ScreenContainer>
   );
 }
@@ -263,8 +303,21 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     paddingVertical: 18,
     alignItems: 'center',
-    marginBottom: space.s7,
+    marginBottom: space.s4,
   },
   ctaDisabled: { backgroundColor: colors.ink4, opacity: 0.6 },
   ctaText: { color: colors.paper, fontWeight: '700', fontSize: 16 },
+
+  // v0.10 (issue #69): exercise exit button. Text-only, sits below
+  // the Begin/Pause/Resume CTA. 44pt min height for tap target
+  // compliance (WCAG 2.5.5).
+  exitBtn: {
+    minHeight: 44,
+    marginHorizontal: space.s6,
+    marginBottom: space.s7,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: radius.full,
+  },
+  exitBtnText: { ...t.bodyBold, color: colors.lavender700, fontSize: 14 },
 });

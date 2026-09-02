@@ -4,15 +4,22 @@ import React, { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Card, styles as cardStyles } from '../components/Card';
 import { colors, radius, space, type as t } from '../theme';
 import { storage } from '../storage';
 import { localDateString } from '../util/date';
 import type { MoodEntry } from '../types';
+import type { RootStackParamList } from '../nav/RootNav';
 
 export function InsightsScreen() {
-  const nav = useNavigation<any>();
+  // v0.10: typed navigation per issue #68. InsightsScreen was the only
+  // screen using `useNavigation<any>()`, which silently accepts any
+  // route name (and any params) at compile time. Switching to the typed
+  // `NativeStackNavigationProp<RootStackParamList>` makes invalid route
+  // names/params a typecheck error.
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [moods, setMoods] = useState<MoodEntry[]>([]);
 
   // v0.9: re-read on every focus so the chart reflects MoodCheckIn
@@ -97,7 +104,11 @@ export function InsightsScreen() {
     <ScreenContainer>
       <View style={styles.header}>
         <Text style={styles.eyebrow}>THIS WEEK</Text>
-        <Text style={styles.h1}>Your week</Text>
+        {/* v0.10 (issue #82): h1 carries header semantics for screen-reader
+            rotor navigation. */}
+        <Text style={styles.h1} accessibilityRole="header">
+          Your week
+        </Text>
       </View>
 
       <Card>
@@ -106,10 +117,33 @@ export function InsightsScreen() {
             <Text style={styles.bigStat}>{avg ? avg.toFixed(1) : '—'}</Text>
             <Text style={styles.statLabel}>AVG MOOD</Text>
           </View>
-          <Text style={styles.statSub}>{filled.length} of 7 days logged</Text>
+          <Text
+            style={styles.statSub}
+            // v0.10 (issue #60): screen-reader-friendly stats. The
+            // visible "X of 7 days logged" reads as part of the
+            // stat row, but a screen reader would announce it as
+            // an isolated small string. The accessibilityLabel
+            // composes the full sentence "X of 7 days logged this
+            // week" so VoiceOver/TalkBack users get the same
+            // context sighted users do.
+            accessible={true}
+            accessibilityLabel={`${filled.length} of 7 days logged this week`}
+          >
+            {filled.length} of 7 days logged
+          </Text>
         </View>
 
-        <View style={styles.graph}>
+        <View
+          style={styles.graph}
+          // v0.10 (issue #60): the SVG chart is decorative for
+          // screen readers — its visual encoding (line, dots,
+          // gridlines) doesn't translate. The accessible
+          // representation is the per-day list below the chart,
+          // which speaks the actual data. The chart itself is
+          // hidden from the a11y tree so the screen reader
+          // doesn't announce "image, line, line, dot, dot".
+          importantForAccessibility="no"
+        >
           {filled.length >= 1 ? (
             <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
               {/* Y-axis tick labels (1 = low, 6 = high). Rendered in
@@ -192,7 +226,23 @@ export function InsightsScreen() {
             </View>
           )}
         </View>
-        <View style={styles.dayLabels}>
+        {/* v0.10 (issue #60): per-day screen-reader representation.
+            The visible day labels are tiny (10pt) and don't speak
+            the value. Below the chart we render a single
+            accessible summary line + a hidden per-day list. The
+            summary line composes the data into a sentence a
+            screen reader can announce in one go; the per-day
+            list provides the granular values a user might want
+            to inspect. */}
+        <Text
+          style={styles.a11ySummary}
+          accessible={true}
+          accessibilityRole="text"
+          accessibilityLabel={buildWeekSummary(last7, filled.length, avg)}
+        >
+          {buildWeekSummary(last7, filled.length, avg)}
+        </Text>
+        <View style={styles.dayLabels} importantForAccessibility="no">
           {last7.map((d) => {
             // Render absolute date (e.g. "Jul 11") instead of weekday
             // letter so labels don't desync from data points across month
@@ -210,28 +260,67 @@ export function InsightsScreen() {
               </Text>
             );
           })}
-          {/* v0.9: y-axis legend. The dashed gridlines above show
-              tier positions; this legend tells the user what "1" and
-              "6" mean. Plans/05 P2-19. The chart axis is mapped from
-              score-1 (low) at the bottom to score-6 (high) at the
-              top — same convention as the MoodPicker emoji buttons. */}
-          <View style={styles.yLegend}>
-            <Text style={styles.yLegendText}>1 = low</Text>
-            <Text style={styles.yLegendText}>6 = high</Text>
-          </View>
+        </View>
+        {/* v0.9: y-axis legend. */}
+        <View style={styles.yLegend} importantForAccessibility="no">
+          <Text style={styles.yLegendText}>1 = low</Text>
+          <Text style={styles.yLegendText}>6 = high</Text>
         </View>
       </Card>
 
+      {/* v0.10 (issue #60): removed the unimplemented "Patterns
+          build after ~2 weeks of check-ins" promise. The plans
+          document committed to a recurring-theme analyzer that
+          isn't implemented in v0; surfacing the promise as a
+          shipped feature was a false claim. The card now shows
+          a brief, honest note about what Insights actually
+          shows (the last 7 days) and a pointer to logging
+          consistently. No diagnostic claim, no clinical
+          interpretation, no theme detection. */}
       <Card variant="peach">
-        <Text style={cardStyles.eyebrow}>PATTERN</Text>
-        <Text style={cardStyles.title}>Patterns build after ~2 weeks of check-ins.</Text>
+        <Text style={cardStyles.eyebrow}>ABOUT THIS VIEW</Text>
+        <Text style={cardStyles.title}>A simple look at your last 7 days.</Text>
         <Text style={cardStyles.sub}>
-          Fernly watches for recurring themes — work stress, sleep, weekends — and surfaces them
-          gently here.
+          Insights shows the moods you've logged over the past week. The chart is a personal
+          record — not a diagnosis. Logging more days gives you a clearer picture over time.
         </Text>
       </Card>
     </ScreenContainer>
   );
+}
+
+// v0.10 (issue #60): build a single sentence describing the
+// week's data. Screen readers announce this as a single string
+// rather than letting the user step through 7 separate day
+// elements. Falls back to an empty-week statement when no days
+// are logged.
+function buildWeekSummary(
+  last7: { score: number | null; iso: string }[],
+  filledCount: number,
+  avg: number | null,
+): string {
+  if (filledCount === 0) {
+    return 'No moods logged this week.';
+  }
+  const parts: string[] = [];
+  parts.push(`${filledCount} of 7 days logged`);
+  if (avg !== null) {
+    parts.push(`average ${avg.toFixed(1)} out of 6`);
+  }
+  // Per-day values so a screen-reader user can determine each
+  // date and score. "Monday July 14: 4 of 6. Tuesday July 15:
+  // not logged." — concrete, accurate, no clinical claim.
+  for (const d of last7) {
+    const date = new Date(d.iso + 'T12:00:00');
+    const weekday = date.toLocaleDateString(undefined, { weekday: 'long' });
+    const monthDay = date.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+    if (d.score === null) {
+      parts.push(`${weekday} ${monthDay}: not logged.`);
+    } else {
+      parts.push(`${weekday} ${monthDay}: ${d.score} of 6.`);
+    }
+  }
+  return parts.join('. ');
 }
 
 const styles = StyleSheet.create({
@@ -276,4 +365,19 @@ const styles = StyleSheet.create({
 
   dayLabels: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: space.s3 },
   dayLabel: { ...t.eyebrow, fontSize: 10, color: colors.textMuted },
+
+  // v0.10 (issue #60): visible copy of the screen-reader
+  // summary. The same string is used as the accessibilityLabel
+  // on the Text above, so the visible + audible representations
+  // agree. Visually this is small + muted — it's a fallback for
+  // users who want the spoken version on-screen; the chart +
+  // day labels remain the primary visual channel.
+  a11ySummary: {
+    ...t.small,
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+    paddingHorizontal: space.s3,
+    marginBottom: space.s2,
+  },
 });

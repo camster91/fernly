@@ -1,5 +1,16 @@
 # Fernly — Kanban Board
 
+> **STATUS: HISTORICAL.** This board tracks the 2026-07-22 codebase-
+> improvement arc (PRs 1-13). The arc closed on 2026-07-23. The
+> current state of open issues is on the GitHub project board at
+> https://github.com/camster91/fernly/issues. The post-merge audit
+> (plans/03) and full-codebase review (plans/05) are still the
+> canonical source for the items that arc shipped. The follow-up
+> audit (2026-08-17, issues #40–#82) is tracked in the live issue
+> queue, not in this document.
+
+---
+
 **Repo:** `camster91/fernly` @ `main` (commit `3f61673`+ on 2026-07-22)
 **Branch baseline:** 13 PRs merged; ahead of origin by 59+ commits
 **Stack:** Expo SDK 57, RN 0.86, React 19.2, TypeScript 6.0.3, AsyncStorage

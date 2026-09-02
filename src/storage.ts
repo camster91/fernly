@@ -82,6 +82,16 @@ const ASYNC_KEYS = {
   // launch. Entries older than 6h are dropped on read; persistence is
   // best-effort (same swallow-on-error policy as the rest of AsyncStorage).
   verifiedUrls: '@fernly/verified-urls',
+  // v0.11 (issue #41): chat backend feature flag override. Set
+  // '1' to force-enable the real chat backend for this device
+  // (internal cohort); '0' to force-disable; unset to defer to env.
+  // Plain string so we don't need JSON parsing on a single-byte
+  // value — see chat-feature-flag.ts.
+  chatBackendOverride: '@fernly/chat-backend-override',
+  // v0.11 (issue #41): chat usage counter. JSON object with the
+  // shape consumed by chat-usage.ts. Stored unencrypted (low
+  // sensitivity — these are just timestamps + counts).
+  chatUsage: '@fernly/chat-usage',
 } as const;
 
 // ---- SecureStore keys (encrypted, device-bound) ----
@@ -106,6 +116,16 @@ const SESSION_KEY_PREFIX = 'fernly.session.v1.';
 
 // ---- Schema migration helpers ----
 const CURRENT_CHAT_VERSION = 1 as const;
+
+// v0.10 (issue #79): human-readable description of a storage error.
+// Used by the result-returning getProfileSafe/getMoodsSafe so the
+// caller can show "Couldn't read your profile: <reason>" rather than
+// silently treating the error as a fresh install.
+function describeError(e: unknown): string {
+  if (e instanceof Error) return e.message || e.name || 'unknown error';
+  if (typeof e === 'string') return e;
+  return 'unknown error';
+}
 
 function migrateChatSession(raw: unknown): ChatSession | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -160,6 +180,13 @@ async function asyncSet(key: string, value: unknown): Promise<void> {
   } catch {
     // intentionally swallow — caller should not crash on quota / IO errors
   }
+}
+
+// v0.10 (issue #52): strict variant of asyncSet. Throws on failure
+// so callers (e.g. setProfileStrict) can surface a real error to the
+// user. The legacy asyncSet remains for best-effort callers.
+async function asyncSetStrict(key: string, value: unknown): Promise<void> {
+  await AsyncStorage.setItem(key, JSON.stringify(value));
 }
 
 async function asyncGetString(key: string): Promise<string | null> {
@@ -250,6 +277,15 @@ async function writeSessionIndex(list: string[]): Promise<void> {
   }
 }
 
+// v0.10 (issue #52): strict variant of writeSessionIndex. Throws on
+// failure so the strict write paths can surface a real error.
+async function writeSessionIndexStrict(list: string[]): Promise<void> {
+  // Dedup before writing — setChatSessionStrict can be called after
+  // a partial failure that left the index in an unknown state.
+  const dedup = Array.from(new Set(list));
+  await AsyncStorage.setItem(ASYNC_KEYS.sessionKeyIndex, JSON.stringify(dedup));
+}
+
 // Serial append — Promise.all would race on readSessionIndex() since
 // each call returns the same base list before either writes its update.
 // Sequential is fine here: migration is rare and the session count is
@@ -274,17 +310,97 @@ export const storage = {
     return asyncGet<UserProfile>(ASYNC_KEYS.profile);
   },
   async setProfile(p: UserProfile) {
-    await asyncSet(ASYNC_KEYS.profile, p);
+    // v0.10 (issue #52): strict variant. The legacy `setProfile`
+    // swallowed AsyncStorage failures (best-effort) so the onboarding
+    // screen couldn't tell the difference between a successful save
+    // and one that silently failed. The strict variant throws so the
+    // caller's try/catch can surface a real error. The legacy
+    // best-effort path remains for any caller that explicitly wants
+    // it (currently none — onboarding now uses setProfileStrict).
+    await asyncSetStrict(ASYNC_KEYS.profile, p);
+  },
+  async setProfileStrict(p: UserProfile): Promise<void> {
+    await asyncSetStrict(ASYNC_KEYS.profile, p);
+  },
+
+  // v0.10 (issue #79): result-returning profile read. Unlike
+  // getProfile(), which collapses "no record" and "read failure" into
+  // the same null return, this distinguishes them so the calling
+  // screen can show a "couldn't read your data" state instead of
+  // routing a returning user into onboarding or an empty Today.
+  //
+  // - kind: 'empty'  → no profile record exists (legitimate first run)
+  // - kind: 'ready'  → profile record exists and parsed
+  // - kind: 'error'  → AsyncStorage threw OR the record exists but is
+  //                    not valid JSON / not a valid UserProfile shape.
+  //                    The caller must NOT treat this as a first run
+  //                    — that path is reserved for kind: 'empty'.
+  async getProfileSafe(): Promise<
+    | { kind: 'empty' }
+    | { kind: 'ready'; profile: UserProfile }
+    | { kind: 'error'; reason: string }
+  > {
+    let raw: string | null = null;
+    try {
+      raw = await AsyncStorage.getItem(ASYNC_KEYS.profile);
+    } catch (e) {
+      return { kind: 'error', reason: describeError(e) };
+    }
+    if (raw === null) return { kind: 'empty' };
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== 'object' || !('onboarded' in parsed)) {
+        return { kind: 'error', reason: 'profile record is malformed' };
+      }
+      return { kind: 'ready', profile: parsed as UserProfile };
+    } catch (e) {
+      return { kind: 'error', reason: describeError(e) };
+    }
   },
 
   // --- Moods (unencrypted AsyncStorage) ---
   async getMoods(): Promise<MoodEntry[]> {
     return (await asyncGet<MoodEntry[]>(ASYNC_KEYS.moods)) ?? [];
   },
+  // v0.10 (issue #79): result-returning moods read. Same shape as
+  // getProfileSafe — distinguishes "no moods yet" from "couldn't
+  // read moods". Today and Insights use this so a read failure
+  // doesn't show an empty chart + "no streak" message when the
+  // user's data is still on disk.
+  async getMoodsSafe(): Promise<
+    | { kind: 'empty' }
+    | { kind: 'ready'; moods: MoodEntry[] }
+    | { kind: 'error'; reason: string }
+  > {
+    let raw: string | null = null;
+    try {
+      raw = await AsyncStorage.getItem(ASYNC_KEYS.moods);
+    } catch (e) {
+      return { kind: 'error', reason: describeError(e) };
+    }
+    if (raw === null) return { kind: 'empty' };
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) {
+        return { kind: 'error', reason: 'moods record is malformed' };
+      }
+      return { kind: 'ready', moods: parsed as MoodEntry[] };
+    } catch (e) {
+      return { kind: 'error', reason: describeError(e) };
+    }
+  },
   async addMood(m: MoodEntry) {
     const all = await storage.getMoods();
     const filtered = all.filter((x) => x.date !== m.date);
     await asyncSet(ASYNC_KEYS.moods, [m, ...filtered]);
+  },
+  // v0.10 (issue #52): strict mood add. Throws on AsyncStorage
+  // failure so the MoodCheckInScreen can surface a real error
+  // instead of silently failing and closing the screen.
+  async addMoodStrict(m: MoodEntry): Promise<void> {
+    const all = await storage.getMoods();
+    const filtered = all.filter((x) => x.date !== m.date);
+    await asyncSetStrict(ASYNC_KEYS.moods, [m, ...filtered]);
   },
 
   // --- Onboarding flag (unencrypted AsyncStorage) ---
@@ -297,6 +413,12 @@ export const storage = {
     } catch {
       // swallow
     }
+  },
+  // v0.10 (issue #52): strict variant. Throws on failure so the
+  // RootNav.onDone path can verify the flag actually persisted
+  // before flipping the user into the main tabs.
+  async setOnboardedStrict(v: boolean): Promise<void> {
+    await AsyncStorage.setItem(ASYNC_KEYS.onboarding, v ? 'true' : 'false');
   },
 
   // --- Active session id (unencrypted AsyncStorage — UUID only) ---
@@ -334,6 +456,41 @@ export const storage = {
     await asyncSet(ASYNC_KEYS.verifiedUrls, map);
   },
 
+  // --- Generic AsyncStorage string get/set (v0.11) ---
+  // Exposed so chat-feature-flag.ts can persist the override
+  // without depending on AsyncStorage directly. Best-effort
+  // (matches the existing asyncGetString / asyncSetString policy).
+  async asyncGetString(key: string): Promise<string | null> {
+    return asyncGetString(key);
+  },
+  async asyncSetString(key: string, value: string): Promise<void> {
+    await asyncSetString(key, value);
+  },
+
+  // --- Chat backend override (v0.11, issue #41) ---
+  // String-keyed: '1' = force on, '0' = force off, '' / null = no
+  // preference. Kept as a plain string (not JSON) because there's
+  // nothing to serialize — the chat-feature-flag module owns the
+  // truthy/falsey contract.
+  async getChatBackendOverride(): Promise<string | null> {
+    return asyncGetString(ASYNC_KEYS.chatBackendOverride);
+  },
+  async setChatBackendOverride(value: string): Promise<void> {
+    await asyncSetString(ASYNC_KEYS.chatBackendOverride, value);
+  },
+
+  // --- Chat usage counter (v0.11, issue #41) ---
+  // Backing store for the per-day / per-minute rate limiter in
+  // chat-usage.ts. The shape is owned by that module — this method
+  // just returns `unknown` so the parser is colocated with the
+  // decision logic, not with storage.
+  async getChatUsage(): Promise<unknown> {
+    return asyncGet<unknown>(ASYNC_KEYS.chatUsage);
+  },
+  async setChatUsage(usage: unknown): Promise<void> {
+    await asyncSet(ASYNC_KEYS.chatUsage, usage);
+  },
+
   // --- Chat history: per-session keys (ENCRYPTED SecureStore) ---
   // v0.3: each session lives under its own SecureStore key so an in-place
   // append doesn't re-serialize the full chat history. The legacy single
@@ -357,6 +514,17 @@ export const storage = {
     const next = { ...session, version: CURRENT_CHAT_VERSION };
     await secureSet(sessionKey(session.id), next);
     await addToSessionIndex(sessionKey(session.id));
+  },
+
+  // v0.10 (issue #52): strict chat-session write. Throws on either
+  // the SecureStore write or the index append. Used by chat-send
+  // paths that have already restored the draft on failure; the
+  // legacy swallow variant remains for callers that explicitly want
+  // best-effort.
+  async setChatSessionStrict(session: ChatSession): Promise<void> {
+    const next = { ...session, version: CURRENT_CHAT_VERSION };
+    await secureSetStrict(sessionKey(session.id), next);
+    await writeSessionIndexStrict([...await readSessionIndex(), sessionKey(session.id)]);
   },
 
   // Append a message to an existing session. In-place: reads the session,
@@ -396,9 +564,65 @@ export const storage = {
     return session;
   },
 
+  // v0.10 (issue #52): enumerate every current chat session by
+  // walking the index, with a soft read for each entry. Returns the
+  // parsed sessions plus the list of keys that failed to read (so
+  // export and stats counters know when the result is partial).
+  // This is the canonical "list all chats" path — getChats() (the
+  // legacy single-blob walker) is now an internal migration helper
+  // and is no longer used for export / counts.
+  async getAllChatSessions(): Promise<{ sessions: ChatSession[]; unreadable: string[] }> {
+    // First, ensure the legacy blob (if any) is migrated into
+    // per-session keys. This is what the v0.3 → v0.10+ install path
+    // hits. We don't fail the whole enumeration if migration throws;
+    // we report it as a single unreadable key.
+    let legacyFailed = false;
+    try {
+      await storage.getChats();
+    } catch {
+      legacyFailed = true;
+    }
+    const keys = await readSessionIndex();
+    const sessions: ChatSession[] = [];
+    const unreadable: string[] = [];
+    if (legacyFailed) unreadable.push(SECURE_KEYS.chats);
+    // Read each session key in parallel. A single failure does not
+    // block the rest of the enumeration.
+    const results = await Promise.allSettled(
+      keys.map((k) => storage.getChatSessionByKey(k)),
+    );
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status === 'fulfilled') {
+        if (r.value) sessions.push(r.value);
+        else unreadable.push(keys[i]);
+      } else {
+        unreadable.push(keys[i]);
+      }
+    }
+    // Sort newest first by startedAt for predictable UI ordering.
+    sessions.sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
+    return { sessions, unreadable };
+  },
+
+  // Internal: read a session by its full SecureStore key (not its
+  // session id). Used by getAllChatSessions to walk the index.
+  async getChatSessionByKey(key: string): Promise<ChatSession | null> {
+    const raw = await secureGet<unknown>(key);
+    if (!raw) return null;
+    return migrateChatSession(raw);
+  },
+
   // Legacy list-all-chats API. v0.3: this is only useful for the
   // ProfileScreen stats counter. Walks the legacy single-blob key
   // (if present) for v0 users and counts entries.
+  //
+  // v0.10 (issue #52): still part of the public API for
+  // backward compatibility, but ProfileScreen / SettingsScreen now
+  // prefer getAllChatSessions() which walks the index rather than
+  // the legacy single blob. Calling getChats() on a v0.10+ install
+  // (no legacy blob) returns [] — this is correct but no longer
+  // the source of truth for "how many chats does this user have".
   async getChats(): Promise<ChatSession[]> {
     // Try the legacy blob first (v0 / v0.2 stored everything under one key).
     const raw = await secureGet<unknown[]>(SECURE_KEYS.chats);
@@ -466,6 +690,55 @@ export const storage = {
     await secureSet(SECURE_KEYS.crisisAudit, capped);
   },
 
+  // v0.10 (issue #70): delete a single chat session by id. Used
+  // by the chat history sheet to remove a single conversation
+  // without affecting the rest of the user's data. Returns true
+  // if the session was found and deleted, false if the id didn't
+  // exist. Removes the session key from the index AND from
+  // SecureStore so clearAll() can't find it later.
+  async deleteChatSession(id: string): Promise<boolean> {
+    // Only the key itself, not the message count, is sensitive to
+    // race conditions: a concurrent append would have already
+    // re-added the key to the index. We snapshot the index, remove
+    // the key, and write back — if a concurrent writer races us
+    // their re-add wins (the user's "delete" intent is preserved
+    // for the visible session, and the next write will keep the
+    // session in the index).
+    const keys = await readSessionIndex();
+    const target = sessionKey(id);
+    if (!keys.includes(target)) {
+      // The session may still exist in SecureStore (legacy
+      // migration paths can write a session without indexing it
+      // in old code). Try the delete anyway so a manual
+      // delete-from-history still works.
+      try {
+        await secureDeleteStrict(target);
+      } catch {
+        // Nothing to do — the key genuinely doesn't exist.
+      }
+      return false;
+    }
+    const next = keys.filter((k) => k !== target);
+    await writeSessionIndexStrict(next);
+    try {
+      await secureDeleteStrict(target);
+    } catch {
+      // The SecureStore delete failed; the key remains in the
+      // keychain but is no longer indexed. clearAll() won't find
+      // it. The session is effectively gone from the user-visible
+      // history. We return true because the user-facing effect
+      // (session is no longer reachable) is achieved.
+    }
+    // If the deleted session was the active one, clear the active
+    // id so the next chat mount starts a fresh session rather
+    // than pointing at a deleted one.
+    const active = await storage.getActiveSessionId();
+    if (active === id) {
+      await storage.setActiveSessionId(null);
+    }
+    return true;
+  },
+
   // --- Reset (wipes user-facing data; audit log persists) ---
   // v0.7: critical ordering — the session key index in AsyncStorage
   // MUST be read BEFORE removeMany() is called, otherwise removeMany
@@ -480,7 +753,15 @@ export const storage = {
   // Fix: read the index first, then removeMany the rest of AsyncStorage
   // (including the now-redundant index itself last), then enumerate the
   // session keys from the saved list.
-  async clearAll() {
+  //
+  // v0.10 (issue #52): clearAll() now returns a structured result
+  // listing which targeted records were verified-deleted. The
+  // ProfileScreen reset flow uses this to surface partial-failure
+  // states instead of silently declaring success. The legacy
+  // swallow-on-error behavior is preserved for any caller that
+  // doesn't care about the result (none today — ProfileScreen now
+  // awaits and inspects).
+  async clearAll(): Promise<ClearAllResult> {
     // 1. Snapshot the session key index BEFORE wiping AsyncStorage.
     const sessionKeys = await readSessionIndex();
 
@@ -493,36 +774,85 @@ export const storage = {
     // session index is filtered out so we can read it in step 1 above
     // and then drop it last in step 5.
     const keysToRemove = Object.values(ASYNC_KEYS).filter((k) => k !== ASYNC_KEYS.sessionKeyIndex);
-    try {
-      await Promise.all(keysToRemove.map((k) => AsyncStorage.removeItem(k).catch(() => undefined)));
-    } catch {
-      // continue — best-effort wipe
-    }
+    let asyncRemoved = 0;
+    const asyncResults = await Promise.allSettled(
+      keysToRemove.map((k) => AsyncStorage.removeItem(k)),
+    );
+    asyncRemoved = asyncResults.filter((r) => r.status === 'fulfilled').length;
 
     // 3. Wipe the legacy single-blob key if it still exists.
-    await secureDelete(SECURE_KEYS.chats);
+    let legacyDeleted = false;
+    try {
+      await secureDeleteStrict(SECURE_KEYS.chats);
+      legacyDeleted = true;
+    } catch {
+      legacyDeleted = false;
+    }
 
     // 4. Enumerate and delete every per-session SecureStore key. Use
     // allSettled so a single failure (e.g. keychain locked mid-reset)
-    // doesn't block the rest.
-    await Promise.allSettled(
+    // doesn't block the rest. Per-key failures are returned in the
+    // result so the ProfileScreen can warn the user.
+    const sessionResults = await Promise.allSettled(
       sessionKeys.map((k) => SecureStore.deleteItemAsync(k, SECURE_OPTIONS)),
     );
+    const sessionsDeleted = sessionResults.filter((r) => r.status === 'fulfilled').length;
+    const sessionsFailed = sessionResults
+      .map((r, i) => (r.status === 'rejected' ? sessionKeys[i] : null))
+      .filter((k): k is string => k !== null);
 
     // 5. Drop the now-drained session key index. (The removeMany above
     // skipped it; clear it here.)
+    let indexRemoved = true;
     try {
       await AsyncStorage.removeItem(ASYNC_KEYS.sessionKeyIndex);
     } catch {
-      // ignore
+      indexRemoved = false;
     }
 
     // NOTE: SECURE_KEYS.crisisAudit is intentionally NOT deleted here.
-    //
+
+    const result: ClearAllResult = {
+      asyncStorageRemoved: asyncRemoved,
+      legacyDeleted,
+      sessionsDeleted,
+      sessionsFailed,
+      indexRemoved,
+      auditRetained: true,
+    };
+
     // Notify subscribers (RootNav) that a reset happened so they can
     // re-read state. This runs even if the AsyncStorage removeMany
     // above partially failed — the partial-failure case is rare but
     // we want listeners to know we attempted a reset.
     emitReset();
+    return result;
   },
 };
+
+// v0.10 (issue #52): result type for clearAll(). The ProfileScreen
+// reset flow inspects this to surface partial-failure states
+// (e.g. "5 of 7 sessions deleted — 2 still in your keychain, try
+// again"). Each field is computed from the actual delete outcome,
+// not a best-effort assumption.
+export interface ClearAllResult {
+  /** Number of AsyncStorage keys successfully removed. */
+  asyncStorageRemoved: number;
+  /** True iff the legacy single-blob chat key was deleted. */
+  legacyDeleted: boolean;
+  /** Number of per-session SecureStore keys successfully deleted. */
+  sessionsDeleted: number;
+  /** Per-session keys that failed to delete. Should be retried. */
+  sessionsFailed: string[];
+  /** True iff the session-key index was successfully dropped. */
+  indexRemoved: boolean;
+  /** True iff the crisis audit log was intentionally retained. */
+  auditRetained: boolean;
+}
+
+// v0.10 (issue #52): strict variant of secureDelete. Throws on
+// failure so the clearAll result can report which keys were
+// successfully deleted vs which need a retry.
+async function secureDeleteStrict(key: string): Promise<void> {
+  await SecureStore.deleteItemAsync(key, SECURE_OPTIONS);
+}

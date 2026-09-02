@@ -36,7 +36,12 @@ export function ProfileScreen({ navigation }: Props) {
           const p = await storage.getProfile();
           setProfile(p);
           const moods = await storage.getMoods();
-          const chats = await storage.getChats();
+          // v0.10 (issue #52): use the index-walking enumerator so
+          // the chat count reflects every current session. Previously
+          // getChats() returned the legacy single-blob (and [] for
+          // v0.3+ installs), so the count was wrong for every user
+          // on the per-session storage model.
+          const { sessions: chats } = await storage.getAllChatSessions();
           // "DAYS" used to mean "days since account creation" — which is
           // misleading for a user who installed the app, never logged a
           // mood, and saw "100 DAYS" in their stats. Renamed to "ACTIVE
@@ -117,26 +122,31 @@ export function ProfileScreen({ navigation }: Props) {
           text: 'Reset',
           style: 'destructive',
           onPress: async () => {
-            try {
-              await storage.clearAll();
-              setProfile(null);
-              setStats({ moods: 0, chats: 0, days: 0 });
-              // The storage.clearAll() above emits a 'reset' event that
-              // RootNav subscribes to. RootNav re-reads the (now-empty)
-              // profile and flips onboarded=false, which causes the
-              // NavigationContainer to swap the Stack for OnboardingScreen.
-              // No nav.reset() needed — the conditional render in RootNav
-              // handles the route swap.
-            } catch (err) {
-              // v0.8: surface deletion failures. Without this, a partial
-              // failure silently leaves sensitive data on disk while the
-              // user thinks Reset succeeded.
-              console.warn('[ProfileScreen] reset failed:', err);
+            // v0.10 (issue #52): clearAll now returns a structured
+            // result. We inspect sessionsFailed + indexRemoved to
+            // tell the user whether reset was complete or partial.
+            // Previously the call was fire-and-forget and a partial
+            // failure left encrypted chat history in the keychain
+            // while the user thought Reset succeeded.
+            const result = await storage.clearAll();
+            setProfile(null);
+            setStats({ moods: 0, chats: 0, days: 0 });
+            if (!result.indexRemoved || result.sessionsFailed.length > 0 || !result.legacyDeleted) {
+              // Partial failure: warn the user. The reset event was
+              // still emitted so RootNav re-routes to onboarding, but
+              // the user needs to know some records may still be on
+              // device.
               Alert.alert(
-                "Couldn't complete reset",
-                'Some data may still be on this device. Try again, and if it keeps failing, restart the app.',
+                'Reset was partial',
+                `${result.sessionsDeleted} session(s) deleted. ${result.sessionsFailed.length} could not be deleted and may still be on this device. Try again, and if it keeps failing, restart the app.`,
               );
             }
+            // The storage.clearAll() above emits a 'reset' event that
+            // RootNav subscribes to. RootNav re-reads the (now-empty)
+            // profile and flips onboarded=false, which causes the
+            // NavigationContainer to swap the Stack for OnboardingScreen.
+            // No nav.reset() needed — the conditional render in RootNav
+            // handles the route swap.
           },
         },
       ],

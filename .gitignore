@@ -40,3 +40,29 @@ yarn-error.*
 /ios
 /android
 .hermes/
+
+# v0.10 (issue #53): release evidence (build IDs, commit
+# SHA, actor) is written to .release-evidence/ at the end
+# of every successful release. The dir is gitignored so the
+# evidence file doesn't churn on every release.
+.release-evidence/
+
+# EAS / signing secrets
+.secrets/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# v0.11 (issue #41 work): local scratch files written by the
+# node wrappers (run-tests.js / run-typecheck.js / run-export.js)
+# so PowerShell doesn't garble the stderr. Safe to delete; the
+# scripts regenerate them on every run.
+scripts/.test.out
+scripts/.typecheck.out
+scripts/.export.out
+scripts/.results.old.json
+scripts/commit-msg.txt
+scripts/pr-body.md
+scripts/run-export.js

@@ -6,7 +6,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Card, styles as cardStyles } from '../components/Card';
-import { moodLabel } from '../components/MoodPicker';
+import { initialMoodLabel, moodLabel } from '../components/MoodPicker';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import { localDateString } from '../util/date';
@@ -15,12 +15,30 @@ import type { RootStackParamList } from '../nav/RootNav';
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
+// v0.10: separates greeting NOUN from full sentence (issue #66).
+// Previously `greetingForHour` returned a complete phrase ("Good morning"),
+// which the screen then used in two places — once in the eyebrow (as-is),
+// once in the h1 prefixed with "Good" again — producing "Good good
+// morning, name." Also, the fallback check-in prompt ("How are you waking
+// up today?") was a morning phrase rendered at 9pm. The data model now
+// returns the noun, an uppercase label, and a daypart-appropriate check-in
+// prompt so each surface can compose the copy it actually wants.
+//
+// v0.10 (follow-up): the daypart function moved to
+// `src/util/daypart.ts` so the unit test can import it without
+// dragging the .tsx into vitest's Node loader (no JSX support
+// without an esbuild config bump). TodayScreen re-exports
+// `greetingForHour` for the one downstream caller that still
+// uses it.
+import { daypartForHour, type Daypart } from '../util/daypart';
+export { daypartForHour };
+export type { Daypart };
+
+// Backwards-compatible label helper. Callers (Tests, ProfileScreen) that
+// previously consumed `greetingForHour()` (a complete sentence) now get
+// just the noun via this wrapper. New code should prefer `daypartForHour`.
 function greetingForHour(h: number): string {
-  if (h < 5) return 'Still up?';
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Hey afternoon';
-  if (h < 21) return 'Good evening';
-  return 'Wind-down time';
+  return daypartForHour(h).noun;
 }
 export { greetingForHour };
 
@@ -41,6 +59,12 @@ export function TodayScreen() {
     false,
     false,
   ]);
+  // v0.10 (issue #79): a focused load failure on Today is distinct
+  // from a legitimate empty state. A returning user who sees "no
+  // streak" because the read failed is being lied to. The screen
+  // shows a small "couldn't load" chip + retry when this is set so
+  // the underlying failure is visible.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // v0.9: re-read on every focus, not just mount. After MoodCheckIn
   // saves, returning to Today previously showed the old mood / streak
@@ -48,70 +72,114 @@ export function TodayScreen() {
   // effect every time the screen comes into focus — the right pattern
   // for tab-bar screens that should reflect upstream changes.
   // See plans/05-full-codebase-review-2026-07-22.md P1-13.
+  //
+  // v0.10 (issue #79): use the result-returning safe reads so a
+  // storage failure is shown to the user rather than collapsed into
+  // an empty streak / no-mood-today state.
   useFocusEffect(
     React.useCallback(() => {
+      let cancelled = false;
       (async () => {
-        try {
-          const p = await storage.getProfile();
-          setProfile(p);
-          const moods = await storage.getMoods();
-          const today = localDateString();
-          setTodayMood(moods.find((m) => m.date === today) ?? null);
-          // Streak: count consecutive days from today backward. If today
-          // isn't logged yet but yesterday was, count from yesterday so
-          // the user sees "7-day streak" instead of "0" until they log
-          // today — most habit apps treat the day as a grace period.
-          const moodDates = new Set(moods.map((m) => m.date));
-          const yesterday = new Date();
-          yesterday.setDate(yesterday.getDate() - 1);
-          const yesterdayIso = localDateString(yesterday);
-          // If today is missing but yesterday exists, start counting from
-          // yesterday. The user-facing prompt below communicates "log today
-          // to keep your N-day streak going".
-          //
-          // v0.9: use localDateString() to match the user's wall-clock
-          // date. Streaks broken across timezone midnight boundaries
-          // before this fix. See plans/05 P1-14.
-          const startFromYesterday = !moodDates.has(today) && moodDates.has(yesterdayIso);
-          let count = 0;
-          const d = new Date();
-          if (startFromYesterday) d.setDate(d.getDate() - 1);
-          for (;;) {
-            const iso = localDateString(d);
-            if (moodDates.has(iso)) {
-              count += 1;
-              d.setDate(d.getDate() - 1);
-            } else break;
-          }
-          setStreak(count);
-          setStreakGrace(startFromYesterday && count > 0);
-          // Week strip: 7 booleans, oldest left, today right. Index 0 is
-          // 6 days ago, index 6 is today. JS getDay(): 0=Sun..6=Sat.
-          // The WEEKDAYS label array is [M,T,W,T,F,S,S]; mapping index 0
-          // of the strip to label "M" requires that "today" sit at index 6
-          // and labels run M..S. We compute it by walking back from today.
-          const strip: boolean[] = [];
-          for (let i = 6; i >= 0; i--) {
-            const day = new Date();
-            day.setDate(day.getDate() - i);
-            strip.push(moodDates.has(localDateString(day)));
-          }
-          setWeekLog(strip);
-        } catch {
-          // Storage layer failed (native module not linked, etc.).
-          // Render the screen with empty state rather than crashing.
+        const profileResult = await storage.getProfileSafe();
+        if (cancelled) return;
+        if (profileResult.kind === 'error') {
+          setLoadError(profileResult.reason);
+          return;
         }
+        setProfile(profileResult.kind === 'ready' ? profileResult.profile : null);
+        setLoadError(null);
+
+        const moodsResult = await storage.getMoodsSafe();
+        if (cancelled) return;
+        if (moodsResult.kind === 'error') {
+          setLoadError(moodsResult.reason);
+          return;
+        }
+        const moods = moodsResult.kind === 'ready' ? moodsResult.moods : [];
+        const today = localDateString();
+        setTodayMood(moods.find((m) => m.date === today) ?? null);
+        // Streak: count consecutive days from today backward. If today
+        // isn't logged yet but yesterday was, count from yesterday so
+        // the user sees "7-day streak" instead of "0" until they log
+        // today — most habit apps treat the day as a grace period.
+        const moodDates = new Set(moods.map((m) => m.date));
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayIso = localDateString(yesterday);
+        // If today is missing but yesterday exists, start counting from
+        // yesterday. The user-facing prompt below communicates "log today
+        // to keep your N-day streak going".
+        //
+        // v0.9: use localDateString() to match the user's wall-clock
+        // date. Streaks broken across timezone midnight boundaries
+        // before this fix. See plans/05 P1-14.
+        const startFromYesterday = !moodDates.has(today) && moodDates.has(yesterdayIso);
+        let count = 0;
+        const d = new Date();
+        if (startFromYesterday) d.setDate(d.getDate() - 1);
+        for (;;) {
+          const iso = localDateString(d);
+          if (moodDates.has(iso)) {
+            count += 1;
+            d.setDate(d.getDate() - 1);
+          } else break;
+        }
+        setStreak(count);
+        setStreakGrace(startFromYesterday && count > 0);
+        // Week strip: 7 booleans, oldest left, today right. Index 0 is
+        // 6 days ago, index 6 is today. JS getDay(): 0=Sun..6=Sat.
+        // The WEEKDAYS label array is [M,T,W,T,F,S,S]; mapping index 0
+        // of the strip to label "M" requires that "today" sit at index 6
+        // and labels run M..S. We compute it by walking back from today.
+        const strip: boolean[] = [];
+        for (let i = 6; i >= 0; i--) {
+          const day = new Date();
+          day.setDate(day.getDate() - i);
+          strip.push(moodDates.has(localDateString(day)));
+        }
+        setWeekLog(strip);
       })();
+      return () => {
+        cancelled = true;
+      };
     }, []),
   );
 
   const hour = new Date().getHours();
   const name = profile?.name || 'there';
   const firstName = name.split(' ')[0];
+  // v0.10: use the new daypart helper. The eyebrow uses `label` (uppercase
+  // noun), the h1 composes the natural "Good {noun}, {name}." sentence
+  // without the double-prefix bug, and the prompt uses the daypart-aware
+  // fallback copy. See issue #66.
+  const daypart = daypartForHour(hour);
+  // v0.10 (issue #80): prefer the verbatim onboarding label the user
+  // tapped so Today can re-greet with the same word. Falls back to
+  // the score-derived label for legacy profiles.
+  const onboardingMood = initialMoodLabel(profile);
 
   return (
     <ScreenContainer>
       <View style={styles.greeting}>
+        {/* v0.10 (issue #79): visible signal that a focused read
+            failed. Without this, the user sees their normal greeting
+            and a 0-day streak and assumes the app has no data. The
+            chip is small and non-blocking — they can still navigate
+            to Chat or Practice — but it's the difference between a
+            "no data" interpretation and a "couldn't read it"
+            interpretation. */}
+        {loadError && (
+          <View
+            style={styles.loadErrorChip}
+            accessible={true}
+            accessibilityRole="alert"
+            accessibilityLabel={`Couldn't read your data: ${loadError}. Pull down on the screen to retry, or close and reopen the app.`}
+          >
+            <Text style={styles.loadErrorText}>
+              ⚠️ Couldn't read your data. Pull down to retry.
+            </Text>
+          </View>
+        )}
         {/* Eyebrow: time-of-day + streak framing. New users (streak
             === 0) used to see "0-DAY STREAK" which framed them as
             failing. v0.9 shows the onboarding mood pick on first
@@ -119,28 +187,34 @@ export function TodayScreen() {
             See plans/05 P2-2 + P1-15. */}
         <Text style={styles.eyebrow}>
           {streak > 0
-            ? `${greetingForHour(hour)} · ${streak}-DAY STREAK${
+            ? `${daypart.label} · ${streak}-DAY STREAK${
                 streakGrace ? ' · LOG TODAY TO KEEP IT' : ''
               }`
-            : profile?.initialMood
-              ? `${greetingForHour(hour)} · STARTED ${moodLabel(profile.initialMood).toUpperCase()}`
-              : `${greetingForHour(hour)}`}
+            : onboardingMood
+              ? `${daypart.label} · STARTED ${onboardingMood.toUpperCase()}`
+              : `${daypart.label}`}
         </Text>
-        {/* v0.9: "Hey afternoon" was awkward in caps; produce a
-            natural "Good afternoon." sentence instead. Both pieces
-            of the greeting now flow together grammatically.
-            See plans/05 P2-3. */}
-        <Text style={styles.hi}>
-          Good {greetingForHour(hour).toLowerCase()}, {firstName}.
+        {/* v0.10: composed from the noun — no more "Good good morning".
+            See issue #66. */}
+        <Text
+          style={styles.hi}
+          // v0.10 (issue #82): the h1 carries header semantics so
+          // VoiceOver/TalkBack rotor navigation lands on it as the
+          // page title.
+          accessibilityRole="header"
+        >
+          Good {daypart.noun}, {firstName}.
         </Text>
+        {/* v0.10: prompt is daypart-aware; the prior "How are you waking
+            up today?" was a morning phrase shown at 9pm. */}
         <Text style={styles.prompt}>
           {todayMood
             ? `Today's already logged as ${moodLabel(todayMood.score)} (${todayMood.score}/6). Anything else land?`
             : streakGrace
               ? `Log today to keep your ${streak}-day streak going.`
-              : profile?.initialMood
-                ? `You said you were feeling ${moodLabel(profile.initialMood)} when you signed up. How does today compare?`
-                : 'How are you waking up today?'}
+              : onboardingMood
+                ? `You said you were feeling ${onboardingMood} when you signed up. How does today compare?`
+                : daypart.checkInPrompt}
         </Text>
       </View>
 
@@ -213,7 +287,7 @@ export function TodayScreen() {
       >
         <Text style={cardStyles.eyebrow}>CHECK-IN · 30 SEC</Text>
         <Text style={cardStyles.title}>
-          {todayMood ? "Today's mood" : greetingForHour(hour) + ' mood'}
+          {todayMood ? "Today's mood" : `${daypart.noun.charAt(0).toUpperCase() + daypart.noun.slice(1)} mood`}
         </Text>
         <Text style={cardStyles.sub}>
           {todayMood
@@ -297,4 +371,17 @@ const styles = StyleSheet.create({
     marginTop: -1,
   },
   streakLabel: { fontFamily: 'Menlo', fontSize: 9, color: colors.textMuted, letterSpacing: 0.5 },
+
+  // v0.10 (issue #79): small inline error chip. Sits at the top of
+  // the greeting block so it's the first thing the user sees when the
+  // read failed. Sits inside the screen's existing padding so it
+  // inherits the horizontal rhythm.
+  loadErrorChip: {
+    backgroundColor: colors.yellow100,
+    borderRadius: radius.md,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  loadErrorText: { ...t.small, color: colors.text, textAlign: 'center' },
 });

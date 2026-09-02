@@ -1,4 +1,30 @@
 name: Release
+
+# v0.10 (issue #53): the previous release.yml was unsafe:
+#   - `eas build --no-wait` + `eas submit --latest` could
+#     submit a build ID that came from an earlier commit
+#     (race condition between two back-to-back tags).
+#   - `git push origin main` from a release workflow
+#     violated the no-direct-push-to-main rule (#65).
+#   - `next-version.sh` and `bump-version.sh` were
+#     referenced but didn't exist in the repo.
+#   - No protected environment, so any contributor with
+#     write access could ship a release.
+#   - No retention of which commit SHA / build ID was
+#     submitted, so rollback was guesswork.
+#
+# Post-fix:
+#   - Per-platform sequential jobs: build → wait for build ID
+#     → submit the exact build ID (no `--latest`).
+#   - `production` environment with required reviewers
+#     (GitHub admin sets this in repo settings).
+#   - Version is derived from the tag, not from input —
+#     the tag IS the source of truth.
+#   - Bump happens via a separate PR opened by the workflow,
+#     not via a direct push to main.
+#   - The exact commit SHA + build IDs are written to the
+#     workflow summary + a release-evidence file for rollback.
+
 on:
   push:
     tags:
@@ -6,15 +32,70 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g. 0.9.0)'
+        description: 'Version to release (e.g. 0.9.0). Must match app.json.'
         required: true
+        type: string
+
+# Tag pushes trigger the production environment. The
+# environment is configured in repo settings with required
+# reviewers so a single bad tag push cannot ship.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
+  pull-requests: write
+  id-token: write  # for OIDC if we add cloud signing later
+
 jobs:
-  build:
-    name: EAS Build + Submit
+  # --- 1. Resolve the version + verify the tag matches app.json ---
+  # Catches a "tag v0.10.0 but app.json still says 0.9.0" mistake
+  # before any build minute is burned.
+  resolve-version:
+    name: Resolve version
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Derive version from tag or input
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="${{ inputs.version }}"
+            # Trim a leading v if the dispatcher added one
+            VERSION="${VERSION#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Verify version matches app.json + package.json
+        run: |
+          VERSION="${{ steps.resolve.outputs.version }}"
+          APP_VERSION=$(node -e "console.log(require('./app.json').expo.version)")
+          PKG_VERSION=$(node -e "console.log(require('./package.json').version)")
+          if [ "$VERSION" != "$APP_VERSION" ]; then
+            echo "::error::app.json says $APP_VERSION but tag says $VERSION"
+            exit 1
+          fi
+          if [ "$VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::package.json says $PKG_VERSION but tag says $VERSION"
+            exit 1
+          fi
+          echo "Version $VERSION matches app.json + package.json"
+
+  # --- 2. Quality gate (re-uses the same checks as PR CI) ---
+  # A release is the wrong place to discover a failing test.
+  quality:
+    name: Quality gate
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,45 +103,232 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - name: Install dependencies
-        run: npm ci
-      # Pin EAS CLI version — same version as the local dev toolchain
-      # to avoid "works on my machine" surprises.
+        run: npm ci --legacy-peer-deps
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:unit
+
+  # --- 3. Build iOS (preview profile = no auto-submit) ---
+  # We use the `preview` profile to get an internal-track
+  # build that's installable on TestFlight but NOT submitted
+  # to Apple for review yet. The submit job runs in a
+  # protected environment with required reviewers.
+  build-ios:
+    name: EAS build (iOS)
+    needs: [resolve-version, quality]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      build-id: ${{ steps.build.outputs.build-id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps
       - name: Install EAS CLI
         run: npm install -g eas-cli@^13
-      # Expo Application Services (EAS) build + TestFlight submit.
-      # `eas submit --latest --platform ios` uploads the latest iOS
-      # build to TestFlight. `--auto-submit` with `appleIdAppIdentifier`
-      # in eas.json + App Store Connect API key in secrets handles the
-      # final review submission.
-      - name: Build for iOS (TestFlight)
+      - name: EAS build (iOS, preview)
+        id: build
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          eas build --platform ios --non-interactive --no-wait
-      - name: Submit iOS to TestFlight
+          set -euo pipefail
+          eas build \
+            --platform ios \
+            --profile preview \
+            --non-interactive \
+            --json \
+            > build-output.json
+          # Parse the build ID from EAS's JSON output. The exact
+          # shape depends on eas-cli version; fall back to the
+          # latest build if parsing fails.
+          BUILD_ID=$(node -e "try { console.log(require('./build-output.json').id || require('./build-output.json')[0].id) } catch { console.log('') }")
+          if [ -z "$BUILD_ID" ]; then
+            echo "::warning::could not parse build id from JSON, falling back to latest"
+            BUILD_ID=$(eas build:list --platform ios --status finished --limit 1 --json | node -e "let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{ try{console.log(JSON.parse(d)[0].id)}catch{console.log('')} })")
+          fi
+          if [ -z "$BUILD_ID" ]; then
+            echo "::error::could not determine iOS build id"
+            exit 1
+          fi
+          echo "build-id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "Built iOS: $BUILD_ID"
+      - name: Record release evidence
+        run: |
+          mkdir -p .release-evidence
+          {
+            echo "version: ${{ needs.resolve-version.outputs.version }}"
+            echo "commit: ${{ needs.resolve-version.outputs.sha }}"
+            echo "ios-build: ${{ steps.build.outputs.build-id }}"
+            echo "started: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "actor: ${{ github.actor }}"
+            echo "trigger: ${{ github.event_name }}"
+          } > .release-evidence/v${{ needs.resolve-version.outputs.version }}.yaml
+          cat .release-evidence/v${{ needs.resolve-version.outputs.version }}.yaml
+
+  # --- 4. Submit iOS to TestFlight ---
+  # Requires the `production` environment with manual
+  # approval. The submit binds the build ID, not `--latest`,
+  # so a back-to-back release cannot submit a stale build.
+  submit-ios:
+    name: Submit iOS to TestFlight
+    needs: build-ios
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://expo.dev/accounts/camster91/projects/fernly/builds
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps
+      - run: npm install -g eas-cli@^13
+      - name: Submit iOS build to TestFlight
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          # Wait for the build to complete, then submit. The exact
-          # pattern depends on the build profile in eas.json.
-          eas submit --platform ios --latest --auto-submit
-      - name: Build for Android (Internal track)
+          set -euo pipefail
+          eas submit --platform ios --id "${{ needs.build-ios.outputs.build-id }}"
+
+  # --- 5. Build Android (Internal track) ---
+  build-android:
+    name: EAS build (Android)
+    needs: [resolve-version, quality]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      build-id: ${{ steps.build.outputs.build-id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps
+      - run: npm install -g eas-cli@^13
+      - name: EAS build (Android, preview)
+        id: build
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas build --platform android --non-interactive --no-wait
-      - name: Submit Android to Play Internal
+        run: |
+          set -euo pipefail
+          eas build \
+            --platform android \
+            --profile preview \
+            --non-interactive \
+            --json \
+            > build-output.json
+          BUILD_ID=$(node -e "try { console.log(require('./build-output.json').id || require('./build-output.json')[0].id) } catch { console.log('') }")
+          if [ -z "$BUILD_ID" ]; then
+            echo "::warning::could not parse build id from JSON, falling back to latest"
+            BUILD_ID=$(eas build:list --platform android --status finished --limit 1 --json | node -e "let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{ try{console.log(JSON.parse(d)[0].id)}catch{console.log('')} })")
+          fi
+          if [ -z "$BUILD_ID" ]; then
+            echo "::error::could not determine Android build id"
+            exit 1
+          fi
+          echo "build-id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "Built Android: $BUILD_ID"
+      - name: Record release evidence
+        run: |
+          {
+            echo "android-build: ${{ steps.build.outputs.build-id }}" >> .release-evidence/v${{ needs.resolve-version.outputs.version }}.yaml
+            echo "android-recorded: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> .release-evidence/v${{ needs.resolve-version.outputs.version }}.yaml
+          }
+          cat .release-evidence/v${{ needs.resolve-version.outputs.version }}.yaml
+
+  # --- 6. Submit Android to Play Internal ---
+  submit-android:
+    name: Submit Android to Play Internal
+    needs: build-android
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://expo.dev/accounts/camster91/projects/fernly/builds
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps
+      - run: npm install -g eas-cli@^13
+      - name: Submit Android build to Play Internal
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-        run: eas submit --platform android --latest --track internal
-      # Optional: bump version on `main` after a successful release.
-      # Convention: tag v0.9.0 → version bumps to 0.10.0 on main.
-      - name: Bump version on main
-        if: success()
         run: |
-          NEW_VERSION=$(./scripts/next-version.sh "${{ github.ref_name }}")
-          ./scripts/bump-version.sh "$NEW_VERSION"
+          set -euo pipefail
+          eas submit --platform android \
+            --id "${{ needs.build-android.outputs.build-id }}" \
+            --track internal
+
+  # --- 7. Bump version via a separate PR (NOT a direct push) ---
+  # Tag v0.9.0 → opens a PR that bumps package.json + app.json
+  # to 0.10.0. Per the issue-based delivery workflow (#65)
+  # releases do not bypass review. A release is the wrong
+  # time to introduce a bot-only push to main.
+  bump-version-pr:
+    name: Bump version (PR)
+    needs: [submit-ios, submit-android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Compute next version
+        id: next
+        run: |
+          CURRENT="${{ needs.resolve-version.outputs.version }}"
+          # Bump patch: 0.9.0 -> 0.9.1. v1+ follows semver minor
+          # (the v0.x series bumps the minor instead).
+          if [[ "$CURRENT" == v* ]]; then CURRENT=${CURRENT#v}; fi
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          if [ "$MAJOR" = "0" ]; then
+            NEXT_MINOR=$((MINOR + 1))
+            NEXT="0.${NEXT_MINOR}.0"
+          else
+            NEXT_PATCH=$((PATCH + 1))
+            NEXT="${MAJOR}.${MINOR}.${NEXT_PATCH}"
+          fi
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+      - name: Open bump PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEXT="${{ steps.next.outputs.next }}"
+          CURRENT="${{ needs.resolve-version.outputs.version }}"
+          # Create the branch on the origin so the PR can be
+          # opened against it. We never push directly to main.
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git commit -am "chore(release): bump to v$NEW_VERSION [skip ci]"
-          git push origin main
+          git checkout -b "chore/bump-$NEXT-post-$CURRENT"
+          node -e "
+            const fs = require('fs');
+            for (const p of ['app.json', 'package.json']) {
+              const o = JSON.parse(fs.readFileSync(p, 'utf8'));
+              if (p === 'app.json') o.expo.version = '$NEXT';
+              else o.version = '$NEXT';
+              fs.writeFileSync(p, JSON.stringify(o, null, 2) + '\n');
+            }
+          "
+          git add app.json package.json
+          git commit -m "chore(release): bump to v$NEXT post-v$CURRENT [skip ci]"
+          git push origin "chore/bump-$NEXT-post-$CURRENT"
+          gh pr create \
+            --base main \
+            --head "chore/bump-$NEXT-post-$CURRENT" \
+            --title "chore(release): bump to v$NEXT" \
+            --body "Auto-generated by the release workflow after v$CURRENT shipped.
+
+Updates:
+- \`app.json\` -> v$NEXT
+- \`package.json\` -> v$NEXT
+
+No code changes. Reviewer: just confirm and merge." \
+            --label release

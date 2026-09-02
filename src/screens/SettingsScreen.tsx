@@ -11,99 +11,167 @@
 // on "Save". Reuses Card + the same visual tokens as elsewhere —
 // no new design surfaces.
 import React, { useEffect, useState, useCallback } from 'react';
-import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Card } from '../components/Card';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
-import type { Goal, Mascot, MoodScore, Tone, UserProfile } from '../types';
+import { initialMoodLabel as formatInitialMood } from '../components/MoodPicker';
+// v0.10 (issue #76): MASCOTS / TONES / GOALS moved to
+// src/data/preferences.ts as the single source of truth. This
+// screen consumes the plain `label` / `sample` variants
+// (without the onboarding emoji prefix).
+import { GOALS, MASCOTS, TONES } from '../data/preferences';
+import type { Goal, Mascot, Tone, UserProfile } from '../types';
 
 type Props = {
   navigation: { goBack: () => void };
 };
 
-const MASCOTS: { id: Mascot; emoji: string }[] = [
-  { id: 'moon', emoji: '🌙' },
-  { id: 'fox', emoji: '🦊' },
-  { id: 'turtle', emoji: '🐢' },
-  { id: 'bee', emoji: '🐝' },
-];
-
-const TONES: { id: Tone; label: string; sample: string }[] = [
-  { id: 'soft', label: 'Soft', sample: 'Want to sit with it together?' },
-  { id: 'direct', label: 'Direct', sample: "Let's do the thought record." },
-  { id: 'playful', label: 'Playful', sample: 'your brain is doing the thing again lol' },
-];
-
-const GOALS: { id: Goal; label: string }[] = [
-  { id: 'sleep', label: 'Sleep better' },
-  { id: 'quiet_thoughts', label: 'Quiet my thoughts' },
-  { id: 'less_anxious', label: 'Feel less anxious' },
-  { id: 'self_kindness', label: 'Be kinder to me' },
-  { id: 'process_feelings', label: 'Process feelings' },
-  { id: 'build_habit', label: 'Build a habit' },
-  { id: 'just_explore', label: 'Just see' },
-];
-
 export function SettingsScreen({ navigation }: Props) {
   const [original, setOriginal] = useState<UserProfile | null>(null);
   const [mascot, setMascot] = useState<Mascot>('moon');
   const [tone, setTone] = useState<Tone>('soft');
-  const [goals, setGoals] = useState<Goal[]>([]);
+  // v0.10 (issue #71): goals are no longer editable. The
+  // original-goals array on the profile is shown read-only
+  // in the Goals card so existing users can see what they
+  // previously picked. New profiles have goals: [].
+  // const goals state removed; goals come from `original`.
 
-  useEffect(() => {
-    (async () => {
-      const p = await storage.getProfile();
-      if (!p) return;
-      setOriginal(p);
-      setMascot(p.mascot);
-      setTone(p.tone);
-      setGoals([...p.goals]);
-    })();
-  }, []);
+  // v0.10 (issue #59): re-read on every focus, not just mount.
+  // Without this, a user who resets Fernly or changes profile
+  // settings elsewhere would land on stale data when they
+  // return to this screen. The safe read distinguishes
+  // "no profile" (legitimate empty) from "read error" so a
+  // storage failure doesn't silently mark the form dirty
+  // against an outdated baseline.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        const result = await storage.getProfileSafe();
+        if (cancelled) return;
+        if (result.kind === 'error') {
+          // Don't clear the form on a read failure — the user
+          // may have a real profile sitting in local state and
+          // the failure is transient. Show the error inline so
+          // they know the next save may also fail.
+          setSaveError(`Couldn't read your profile: ${result.reason}. Try again later.`);
+          return;
+        }
+        if (result.kind === 'empty') return;
+        setSaveError(null);
+        setOriginal(result.profile);
+        setMascot(result.profile.mascot);
+        setTone(result.profile.tone);
+        // v0.10 (issue #71): goals are read-only, so we read
+        // them from the profile into the local `original` state
+        // (which feeds the read-only Goals card) rather than
+        // maintaining a separate goals state.
+      })();
+      return () => {
+        cancelled = true;
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
 
+  // v0.10 (issue #59): dirty check now only compares the
+  // editable fields (mascot, tone). Goals are read-only in
+  // v0.10+ (issue #71) so they don't participate in the
+  // comparison.
   const dirty =
     original &&
-    (mascot !== original.mascot ||
-      tone !== original.tone ||
-      JSON.stringify(goals) !== JSON.stringify([...original.goals].sort()));
+    (mascot !== original.mascot || tone !== original.tone);
 
-  const toggleGoal = (id: Goal) =>
-    setGoals((g) => (g.includes(id) ? g.filter((x) => x !== id) : g.length < 3 ? [...g, id] : g));
+  // v0.10 (issue #71): toggleGoal removed — goals are
+  // read-only in Settings. Users who want to clear them use
+  // "Reset Fernly" on the Profile screen.
+
+  // v0.10 (issue #59): single-flight save with retryable error
+  // + unsaved-change preservation. The `saving` flag prevents a
+  // double-tap on the Save button from racing the first write;
+  // the disabled style on the button reinforces the visual
+  // state. A failure leaves `original` unchanged so the form
+  // still reflects the unsaved state — the user can retry or
+  // close (with the dialog) and pick up exactly where they left
+  // off.
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const save = useCallback(async () => {
     if (!original) return;
-    // Preserve initialMood if present (added in plans/05 P1-15;
-    // some older profiles may not have it). Read via index access
-    // with a type guard to keep the SettingsScreen independent of
-    // that branch's UserProfile change.
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    // Preserve initialMood + initialMoodLabel (issue #80). Both are
+    // read-only fields that the user set in onboarding; settings edits
+    // mascot/tone/goals and leaves the start-state mood untouched.
     const next: UserProfile = {
       ...original,
       mascot,
       tone,
-      goals,
-      ...(('initialMood' in original && original.initialMood
+      // v0.10 (issue #71): goals are read-only in Settings. The
+      // original.goals pass through unchanged. The user can
+      // clear them via "Reset Fernly" if desired.
+      goals: original.goals,
+      ...(original.initialMoodLabel
+        ? { initialMoodLabel: original.initialMoodLabel }
+        : {}),
+      ...(original.initialMood !== undefined
         ? { initialMood: original.initialMood }
-        : {}) as Partial<UserProfile>),
+        : {}),
     };
-    await storage.setProfile(next);
-    setOriginal(next);
-    Alert.alert('Saved', 'Your preferences are updated.', [
-      { text: 'OK', onPress: () => navigation.goBack() },
-    ]);
-  }, [original, mascot, tone, goals, navigation]);
+    try {
+      // v0.10 (issue #52): strict variant. A write failure is
+      // surfaced inline; the form stays dirty so the user can
+      // retry without re-entering their changes.
+      await storage.setProfileStrict(next);
+      setOriginal(next);
+      setSaving(false);
+      Alert.alert('Saved', 'Your preferences are updated.', [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
+    } catch (e) {
+      setSaving(false);
+      setSaveError(
+        e instanceof Error
+          ? `Couldn't save: ${e.message}. Your changes are still on this screen — try again.`
+          : "Couldn't save. Your changes are still on this screen — try again.",
+      );
+    }
+  }, [original, mascot, tone, navigation, saving]);
 
   const exportData = useCallback(async () => {
     try {
       const moods = await storage.getMoods();
-      const chats = await storage.getChats();
+      // v0.10 (issue #52): use the index-walking enumerator so the
+      // export actually contains every chat session. Previously
+      // getChats() returned the legacy single-blob (and [] for
+      // v0.3+ installs) — so a v0.3+ user exporting their data
+      // got an empty chats array even though the session was sitting
+      // in their keychain.
+      const { sessions: chats, unreadable: unreadableChats } = await storage.getAllChatSessions();
       const session = await storage.getActiveSessionId();
       const profile = await storage.getProfile();
       // JSON export — the simplest portable format. Round-trip via
       // storage.import is out of v0 scope (import = a different
       // security audit, different risk model).
+      //
+      // v0.10 (issue #52): if any chat sessions failed to read, we
+      // include an `unreadableChats` field so the user knows the
+      // export is partial. Hiding the failure here would mean
+      // "Export your data" silently dropped entries.
       const json = JSON.stringify(
-        { profile, moods, chats, activeSessionId: session, exportedAt: new Date().toISOString() },
+        {
+          profile,
+          moods,
+          chats,
+          activeSessionId: session,
+          exportedAt: new Date().toISOString(),
+          ...(unreadableChats.length > 0 ? { unreadableChats } : {}),
+        },
         null,
         2,
       );
@@ -111,6 +179,12 @@ export function SettingsScreen({ navigation }: Props) {
         title: 'Fernly export',
         message: json,
       });
+      if (unreadableChats.length > 0) {
+        Alert.alert(
+          'Export was partial',
+          `${unreadableChats.length} chat session(s) couldn't be read and were not included. The export is in the share sheet.`,
+        );
+      }
     } catch (err) {
       Alert.alert(
         "Couldn't export",
@@ -127,16 +201,82 @@ export function SettingsScreen({ navigation }: Props) {
     );
   }, []);
 
+  // v0.10 (issue #69): always-visible close affordance. Without
+  // this, the only way out of the modal is the Android back / iOS
+  // swipe-down / Escape key — which a user unfamiliar with the
+  // platform gesture may not discover. The button calls attemptClose
+  // which routes the dirty state through the standard
+  // Save/Discard/Keep-editing dialog (or just closes if clean).
+  function attemptClose() {
+    if (!dirty) {
+      navigation.goBack();
+      return;
+    }
+    Alert.alert(
+      'You have unsaved changes',
+      'Save your changes, discard them, or keep editing?',
+      [
+        { text: 'Keep editing', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => navigation.goBack(),
+        },
+        {
+          text: 'Save',
+          onPress: async () => {
+            // Re-use the same save() path. setProfileStrict
+            // (issue #52) throws on write failure, in which case
+            // the screen stays mounted and the unsaved state is
+            // preserved so the user can retry.
+            try {
+              await save();
+            } catch {
+              Alert.alert(
+                "Couldn't save",
+                'Your changes are still on this screen. Try again, or tap Close and choose Discard to leave without saving.',
+              );
+            }
+          },
+        },
+      ],
+    );
+  }
+
   return (
+    // v0.10 (issue #62): the ScreenContainer owns vertical
+    // scrolling. The previous version had ScreenContainer
+    // (which scrolls) wrapping a ScrollView — two nested
+    // scroll owners meant the outer one intercepted gestures
+    // and the inner one never received them, so the screen
+    // effectively couldn't scroll past the first card on
+    // short viewports. Removed the inner ScrollView; the
+    // ScreenContainer handles the entire content.
     <ScreenContainer scroll>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 100 }}
-        showsVerticalScrollIndicator={false}
-      >
         <View style={styles.header}>
-          <Text style={styles.eyebrow}>SETTINGS</Text>
-          <Text style={styles.title}>Your preferences</Text>
+          {/* v0.10 (issue #69): visible close button at the top of
+              the header so the user has a deterministic exit
+              affordance before reaching the bottom Save button. */}
+          <View style={styles.headerTop}>
+            <Text style={styles.eyebrow}>SETTINGS</Text>
+            <Pressable
+              onPress={attemptClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close settings"
+              accessibilityHint={
+                dirty
+                  ? 'You have unsaved changes. Opens a save/discard dialog.'
+                  : 'Closes the settings screen'
+              }
+              style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={styles.closeBtnText}>Close</Text>
+            </Pressable>
+          </View>
+          {/* v0.10 (issue #82): header semantics for screen-reader rotor. */}
+          <Text style={styles.title} accessibilityRole="header">
+            Your preferences
+          </Text>
           <Text style={styles.sub}>
             Change your mascot, tone, or goals. Changes save with the button at the bottom.
           </Text>
@@ -182,38 +322,45 @@ export function SettingsScreen({ navigation }: Props) {
           ))}
         </Card>
 
-        {/* Goals — multi-select, max 3. */}
-        <Card>
-          <Text style={styles.sectionLabel}>GOALS · {goals.length}/3</Text>
-          {GOALS.map((g) => {
-            const picked = goals.includes(g.id);
-            return (
-              <Pressable
-                key={g.id}
-                onPress={() => toggleGoal(g.id)}
-                accessibilityRole="button"
-                accessibilityLabel={`Toggle goal: ${g.label}`}
-                accessibilityState={{ selected: picked }}
-                style={[styles.goalRow, picked && styles.goalRowActive]}
-              >
-                <Text style={[styles.goalLabel, picked && styles.goalLabelActive]}>{g.label}</Text>
-              </Pressable>
-            );
-          })}
-          {goals.length >= 3 && (
-            <Text style={styles.helperText}>Three goals max — unpick one to choose another.</Text>
-          )}
-        </Card>
+        {/* v0.10 (issue #71): goals are now read-only in Settings.
+            v0.9 collected them during onboarding + allowed editing
+            here, but the field had no observable use in the app
+            (the Practice tab didn't prioritize by goal, the chat
+            didn't reference them). The onboarding flow no longer
+            asks (the question was removed in v0.10). Existing
+            v0.9 profiles still see their previously-picked goals
+            here as a read-only list — they can be cleared via
+            "Reset Fernly" if the user wants a fresh start. */}
+        {original && original.goals.length > 0 && (
+          <Card>
+            <Text style={styles.sectionLabel}>GOALS · {original.goals.length}</Text>
+            <Text style={styles.sub}>
+              You picked these when you signed up. We're not using them to personalize anything yet — that's coming in a future update.
+            </Text>
+            <View style={{ marginTop: space.s3, gap: 8 }}>
+              {original.goals.map((id) => {
+                const g = GOALS.find((x) => x.id === id);
+                if (!g) return null;
+                return (
+                  <View key={id} style={styles.goalRow} accessible accessibilityLabel={`Goal: ${g.label}`}>
+                    <Text style={styles.goalLabel}>{g.label}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </Card>
+        )}
 
         {/* Initial mood — read-only display when present.
             Surfaced for transparency but not editable (would lose
             the "you said X when you signed up" Today greeting). */}
-        {original && 'initialMood' in original && original.initialMood !== undefined && (
+        {original && (original.initialMoodLabel || original.initialMood !== undefined) && (
           <Card>
             <Text style={styles.sectionLabel}>MOOD WHEN YOU STARTED</Text>
             <Text style={styles.sub}>
-              {initialMoodLabel((original.initialMood as MoodScore | undefined) ?? 4)} (set during
-              onboarding)
+              {/* v0.10 (issue #80): show the verbatim word the user picked
+                  in onboarding, not a score-derived label. */}
+              {formatInitialMood(original) ?? 'Unknown'} (set during onboarding)
             </Text>
           </Card>
         )}
@@ -240,38 +387,76 @@ export function SettingsScreen({ navigation }: Props) {
           </Pressable>
         </Card>
 
+        {/* v0.10 (issue #59): inline save error with retry. The
+            error keeps the form dirty so the user can re-tap Save
+            without re-entering their changes. Renders above the
+            save CTA so the user sees it before tapping. */}
+        {saveError && (
+          <View
+            style={styles.saveErrorBanner}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="assertive"
+          >
+            <Text style={styles.saveErrorText}>{saveError}</Text>
+          </View>
+        )}
+
         <Pressable
           onPress={save}
-          disabled={!dirty}
+          disabled={!dirty || saving}
           accessibilityRole="button"
-          accessibilityLabel="Save changes"
-          accessibilityState={{ disabled: !dirty }}
+          accessibilityLabel={
+            saving
+              ? 'Saving changes'
+              : dirty
+                ? 'Save changes'
+                : 'No changes yet'
+          }
+          accessibilityState={{ disabled: !dirty || saving, busy: saving }}
           style={({ pressed }) => [
             styles.saveCta,
-            !dirty && styles.saveCtaDisabled,
-            pressed && styles.saveCtaPressed,
+            (!dirty || saving) && styles.saveCtaDisabled,
+            pressed && !saving && styles.saveCtaPressed,
           ]}
         >
-          <Text style={styles.saveCtaText}>{dirty ? 'Save changes' : 'No changes yet'}</Text>
+          <Text style={styles.saveCtaText}>
+            {saving
+              ? 'Saving…'
+              : dirty
+                ? 'Save changes'
+                : 'No changes yet'}
+          </Text>
         </Pressable>
-      </ScrollView>
     </ScreenContainer>
   );
 }
 
-function initialMoodLabel(score: MoodScore): string {
-  // Mirrors moodLabel in components/MoodPicker.tsx — kept local to
-  // avoid a circular import via MoodPicker for a single row.
-  if (score >= 5) return 'Hopeful';
-  if (score >= 4) return 'Okay';
-  if (score >= 3) return 'Steady';
-  if (score >= 2) return 'Heavy';
-  return 'Low';
-}
+// v0.10 (issue #80): the local `initialMoodLabel` helper is gone.
+// The screen now uses the canonical `initialMoodLabel` from
+// `components/MoodPicker.tsx` (imported as `formatInitialMood` to
+// avoid shadowing the imported symbol). The local copy was a
+// score-derived label that didn't match the word the user picked.
 
 const styles = StyleSheet.create({
   header: { paddingHorizontal: space.s6, paddingTop: space.s6, paddingBottom: space.s4 },
-  eyebrow: { ...t.eyebrow, color: colors.lavender700, marginBottom: 6 },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  eyebrow: { ...t.eyebrow, color: colors.lavender700 },
+  // v0.10 (issue #69): close button. 44pt min height for tap
+  // target compliance (WCAG 2.5.5). Text-only so it doesn't fight
+  // the screen's pastel aesthetic.
+  closeBtn: {
+    minHeight: 44,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: radius.full,
+  },
+  closeBtnText: { ...t.bodyBold, color: colors.lavender700, fontSize: 14 },
   title: { ...t.title, fontSize: 26, color: colors.text, marginBottom: 6 },
   sub: { ...t.body, color: colors.textSoft, lineHeight: 22 },
 
@@ -331,6 +516,17 @@ const styles = StyleSheet.create({
   },
   actionPressed: { opacity: 0.85 },
   actionText: { ...t.body, color: colors.text },
+
+  saveErrorBanner: {
+    marginHorizontal: space.s6,
+    marginBottom: space.s2,
+    backgroundColor: colors.rose50,
+    borderRadius: radius.md,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.rose100,
+  },
+  saveErrorText: { ...t.small, color: colors.warn, textAlign: 'center' },
 
   saveCta: {
     marginHorizontal: space.s6,

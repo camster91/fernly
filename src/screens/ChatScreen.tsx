@@ -18,8 +18,10 @@ import {
   FlatList,
   KeyboardAvoidingView,
   ListRenderItem,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -32,7 +34,17 @@ import { storage } from '../storage';
 import { detectCrisis } from '../safety/crisis';
 import { MASCOT_EMOJI, MASCOT_EMOJI_FALLBACK } from '../data/mascots';
 import type { ChatMessage, ChatSession, CrisisAuditEntry, UserProfile, Tone } from '../types';
-import { fetchReply, readChatBackendUrl } from '../api/chat';
+import {
+  fetchReply,
+  readChatBackendUrl,
+  readHostAllowlist,
+} from '../api/chat';
+import { resolveRealChatDecision } from '../api/chat-feature-flag';
+import {
+  ChatUsageLimitError,
+  getChatUsageSnapshot,
+  reserveSlot,
+} from '../api/chat-usage';
 
 const MAX_INPUT_LENGTH = 4000;
 
@@ -63,6 +75,100 @@ function mockReply(input: string, tone: Tone): string {
   let h = 0;
   for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
   return bank[Math.abs(h) % bank.length];
+}
+
+/**
+ * v0.11 (issue #41): resolve the chat reply for a given send. Three
+ * possible paths:
+ *   1. Mock (decision.enabled === false): env flag off, no URL, or
+ *      override disabled.
+ *   2. Real → mock fallback: decision.enabled is true, but the
+ *      URL read failed OR the usage counter is exhausted. The user
+ *      still gets a reply (a deterministic one).
+ *   3. Real: full fetch with auth, HTTPS, host allowlist, and
+ *      schema validation. Any failure falls back to mock — the
+ *      `auth-missing` case is a fetchReply-throw today because #46
+ *      isn't wired, which is the intended "client holds no creds"
+ *      guarantee.
+ *
+ * The function returns a string and never throws. Internal errors
+ * (network, usage, auth) are caught and logged; the call site
+ * (send()) already restores the user draft on any outer throw so
+ * this function's fail-soft path is the only fallback the user
+ * experiences for "real" send failures.
+ */
+async function resolveReplyText(args: {
+  input: string;
+  tone: Tone;
+  sessionId: string;
+  decision: { enabled: boolean; reason: string };
+}): Promise<string> {
+  const { input, tone, sessionId, decision } = args;
+  if (!decision.enabled) {
+    console.log(`[ChatScreen] mock path (reason: ${decision.reason})`);
+    return mockReply(input, tone);
+  }
+  // Real path. Reserve a usage slot first — if the user is over
+  // their burst or daily cap, we fall back to mock rather than
+  // failing the send. The user still gets a reply and the cost
+  // cap holds.
+  try {
+    await reserveSlot();
+  } catch (e) {
+    if (e instanceof ChatUsageLimitError) {
+      console.warn(
+        `[ChatScreen] usage limit hit (${e.limit} ${e.used}/${e.cap}); falling back to mock`,
+      );
+      return mockReply(input, tone);
+    }
+    throw e;
+  }
+  // Read URL again — the env could have changed between the
+  // decision and now (theoretically). If the URL read throws
+  // (non-https config), we degrade to mock rather than crashing.
+  let backendUrl: string | null = null;
+  try {
+    backendUrl = readChatBackendUrl();
+  } catch (e) {
+    console.warn('[ChatScreen] readChatBackendUrl threw, using mock:', e);
+    return mockReply(input, tone);
+  }
+  if (!backendUrl) return mockReply(input, tone);
+  const abort = new AbortController();
+  // v0.11 (issue #41): the backend now requires an authenticated
+  // identity. The auth layer (#46) will provide a real
+  // getAuthToken; for v0 we expose a stub that returns null —
+  // which makes fetchReply throw ChatBackendError(auth-missing)
+  // and we fall back to mock. This is the "client contains no
+  // provider credentials" guarantee: there is no path where the
+  // client holds a key.
+  try {
+    const result = await fetchReply(
+      { input, tone, sessionId },
+      {
+        url: backendUrl,
+        hostAllowlist: readHostAllowlist(),
+        getAuthToken: async () => {
+          // TODO(#46): wire to the real auth provider.
+          return null;
+        },
+      },
+      abort.signal,
+    );
+    return result.reply;
+  } catch (e) {
+    // The fetch site already wraps fetchReply in a try/catch in
+    // send() — but a throw here would surface as a generic Alert.
+    // Better UX: log the specific ChatBackendError kind and fall
+    // back to mock so the user still gets a reply.
+    if (e && typeof e === 'object' && 'kind' in e) {
+      const k = (e as { kind?: string }).kind;
+      console.warn(`[ChatScreen] fetchReply threw kind=${k}; falling back to mock`);
+    } else {
+      console.warn('[ChatScreen] fetchReply threw; falling back to mock:', e);
+    }
+    return mockReply(input, tone);
+  }
 }
 
 // Memoized message bubble — re-renders only when its own message props change.
@@ -108,44 +214,73 @@ export function ChatScreen() {
   // even if the user had intentionally scrolled up to read history.
   const [stickToBottom, setStickToBottom] = useState(true);
 
+  // v0.10 (issue #79): a focused read failure on chat is distinct
+  // from "no prior conversation". A returning user with a history
+  // who sees an empty chat because the read failed has been
+  // silently reset. The screen tracks a focused hydration error so
+  // the user can see what happened and retry.
+  const [chatLoadError, setChatLoadError] = useState<string | null>(null);
+  // v0.10 (issue #70): history sheet open state. Set true when
+  // the user taps "History"; reset on close. `historyTick` is a
+  // reload counter that bumps on every send/delete so the sheet
+  // re-enumerates the session list next time it opens.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyTick, setHistoryTick] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const p = await storage.getProfile();
-        if (cancelled) return;
-        setProfile(p);
-
-        // v0.3: getChats() runs the legacy-blob migration (v0 → v0.3) as
-        // a side effect, then returns []. After migration, the active
-        // session id either points at a migrated session, or is null and
-        // we start fresh.
-        await storage.getChats();
-
-        const id = await storage.getActiveSessionId();
-        if (cancelled) return;
-        if (id) {
-          const session = await storage.getChatSession(id);
-          // v0.8: check cancelled AFTER every async hop. The previous
-          // code only checked once after the await, so a navigaway-
-          // mid-resolve still triggered the stale-id write at line 112.
-          // See plans/05-full-codebase-review-2026-07-22.md P0-5.
-          if (cancelled) return;
-          if (session) {
-            setActiveSessionId(session.id);
-            setMessages(session.messages);
-          } else if (!cancelled) {
-            // Active id is stale — clear it. Guarded by cancelled
-            // so an unmount doesn't clobber persisted state.
-            await storage.setActiveSessionId(null);
-          }
-        }
-      } catch {
-        // Storage layer failed. Render an empty chat so the user can
-        // start fresh rather than seeing the empty state indefinitely.
-      } finally {
-        if (!cancelled) setLoaded(true);
+      // v0.10 (issue #79): use the result-returning safe read so a
+      // profile-storage failure is shown to the user instead of
+      // being collapsed into an empty profile + empty chat. The
+      // getChats() legacy migration still runs (it has its own
+      // defensive two-phase write) but its failure is also surfaced.
+      const profileResult = await storage.getProfileSafe();
+      if (cancelled) return;
+      if (profileResult.kind === 'error') {
+        setChatLoadError(profileResult.reason);
+        setLoaded(true);
+        return;
       }
+      setProfile(profileResult.kind === 'ready' ? profileResult.profile : null);
+      setChatLoadError(null);
+
+      // v0.3: getChats() runs the legacy-blob migration (v0 → v0.3) as
+      // a side effect, then returns []. After migration, the active
+      // session id either points at a migrated session, or is null and
+      // we start fresh.
+      try {
+        await storage.getChats();
+      } catch (e) {
+        if (cancelled) return;
+        // Legacy migration is best-effort; if it throws, the user
+        // can still chat — they'll just start a new session.
+        setChatLoadError(
+          e instanceof Error
+            ? `Couldn't migrate legacy chats: ${e.message}`
+            : "Couldn't migrate legacy chats.",
+        );
+      }
+
+      const id = await storage.getActiveSessionId();
+      if (cancelled) return;
+      if (id) {
+        const session = await storage.getChatSession(id);
+        // v0.8: check cancelled AFTER every async hop. The previous
+        // code only checked once after the await, so a navigaway-
+        // mid-resolve still triggered the stale-id write at line 112.
+        // See plans/05-full-codebase-review-2026-07-22.md P0-5.
+        if (cancelled) return;
+        if (session) {
+          setActiveSessionId(session.id);
+          setMessages(session.messages);
+        } else if (!cancelled) {
+          // Active id is stale — clear it. Guarded by cancelled
+          // so an unmount doesn't clobber persisted state.
+          await storage.setActiveSessionId(null);
+        }
+      }
+      if (!cancelled) setLoaded(true);
     })();
     return () => {
       cancelled = true;
@@ -187,6 +322,9 @@ export function ChatScreen() {
         sessionCreateRef.current = null;
         sessionId = session.id;
         setActiveSessionId(session.id);
+        // v0.10 (issue #70): new session just created — bump the
+        // history reload tick so it appears in the list next open.
+        setHistoryTick((t) => t + 1);
       }
 
       const userMsg: ChatMessage = {
@@ -210,6 +348,9 @@ export function ChatScreen() {
         if (afterUser) setMessages(afterUser.messages);
         const afterBlocked = await storage.appendMessageToSession(sessionId, blocked);
         if (afterBlocked) setMessages(afterBlocked.messages);
+        // v0.10 (issue #70): bump the history reload tick so the
+        // history sheet sees the updated message count next open.
+        setHistoryTick((t) => t + 1);
         setCrisisMatched(verdict.matchedPhrase);
         setCrisisVisible(true);
         // Append a crisis audit entry. Survives clearAll(); stored in
@@ -243,23 +384,24 @@ export function ChatScreen() {
       // and follows the standard { reply: string } shape. Without the
       // env var, this branch falls back to the deterministic mock so
       // v0 keeps working offline. Plans/05 P0-3.
+      //
+      // v0.11 (issue #41): the "real chat" gate is now the feature
+      // flag, NOT just the URL presence. Three independent layers must
+      // agree before the wire is touched:
+      //   1. env EXPO_PUBLIC_CHAT_API_URL is set (a backend exists)
+      //   2. env EXPO_PUBLIC_CHAT_BACKEND_ENABLED is truthy (the
+      //      operator has approved this build for the real backend)
+      //   3. the in-app override is not explicitly false (the
+      //      user/device hasn't opted out)
+      // Plus #4: the per-day / per-minute usage counter has room.
       const tone = profile?.tone ?? 'soft';
-      const backendUrl = readChatBackendUrl();
-      let replyText: string;
-      if (backendUrl) {
-        const abort = new AbortController();
-        // The chat-screen's unmount effect can't see this controller;
-        // we rely on the send() promise resolution + the request's own
-        // 12s timeout. Future work: wire to isCancelledRef.
-        const result = await fetchReply(
-          { input: text, tone, sessionId },
-          { url: backendUrl },
-          abort.signal,
-        );
-        replyText = result.reply;
-      } else {
-        replyText = mockReply(text, tone);
-      }
+      const decision = await resolveRealChatDecision();
+      const replyText = await resolveReplyText({
+        input: text,
+        tone,
+        sessionId,
+        decision,
+      });
       const replyMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'fernly',
@@ -270,6 +412,9 @@ export function ChatScreen() {
       if (afterUser) setMessages(afterUser.messages);
       const afterReply = await storage.appendMessageToSession(sessionId, replyMsg);
       if (afterReply) setMessages(afterReply.messages);
+      // v0.10 (issue #70): bump the history reload tick so the
+      // history sheet sees the updated message count next open.
+      setHistoryTick((t) => t + 1);
     } catch (err) {
       // v0.9: restore the draft so the user can retry, and surface
       // the failure via Alert instead of silently swallowing. The
@@ -366,8 +511,101 @@ export function ChatScreen() {
     [mascotEmoji],
   );
 
+  // v0.10 (issue #70): start a fresh conversation. The active
+  // session id is cleared so the next send creates a new
+  // ChatSession. Any unsent draft text in the input is preserved
+  // (the user might want to re-send the same message into a
+  // different conversation).
+  async function startNewConversation() {
+    if (isSendingRef.current) return;
+    setActiveSessionId(null);
+    setMessages([]);
+    setCrisisVisible(false);
+    setCrisisMatched(undefined);
+  }
+
   return (
     <ScreenContainer scroll={false} edges={['top']}>
+      {/* v0.10 (issue #79): visible signal that a focused read failed.
+          Sits at the top of the chat surface so the user sees it
+          before any empty-state copy. Non-blocking — they can still
+          type — but visible enough that the data interpretation is
+          "couldn't read" not "no data". */}
+      {chatLoadError && (
+        <View
+          style={styles.loadErrorChip}
+          accessible={true}
+          accessibilityRole="alert"
+          accessibilityLabel={`Couldn't read your chat: ${chatLoadError}. Close and reopen the app to retry.`}
+        >
+          <Text style={styles.loadErrorText}>
+            ⚠️ Couldn't read your chat. Close and reopen the app to retry.
+          </Text>
+        </View>
+      )}
+
+      {/* v0.10 (issue #70): visible chat controls. The "New"
+          button creates a fresh conversation; the "History"
+          button opens the history sheet for switching /
+          deleting prior sessions. Both sit above the message
+          list so the user can find them before typing. */}
+      <View style={styles.chatControls}>
+        <Pressable
+          onPress={startNewConversation}
+          accessibilityRole="button"
+          accessibilityLabel="Start a new conversation"
+          accessibilityHint="Saves the current session and starts fresh"
+          style={({ pressed }) => [styles.chatCtrlBtn, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={styles.chatCtrlBtnText}>+ New</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setHistoryOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Open chat history"
+          accessibilityHint="Browse, switch, or delete past conversations"
+          style={({ pressed }) => [styles.chatCtrlBtn, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={styles.chatCtrlBtnText}>History</Text>
+        </Pressable>
+      </View>
+
+      {/* v0.10 (issue #70): history sheet — see ChatHistorySheet
+          for the data model. Mounted at the end of the screen so
+          it can float over the message list when open. */}
+      <ChatHistorySheet
+        visible={historyOpen}
+        activeSessionId={activeSessionId}
+        onClose={() => setHistoryOpen(false)}
+        onSwitch={async (id) => {
+          setHistoryOpen(false);
+          if (id === activeSessionId) return;
+          // Persist the new active id and load the messages.
+          await storage.setActiveSessionId(id);
+          const session = await storage.getChatSession(id);
+          if (session) {
+            setActiveSessionId(session.id);
+            setMessages(session.messages);
+          }
+          // v0.10 (issue #70): switched active session — no
+          // reload tick bump needed since the session list itself
+          // is unchanged (only the active highlight moves).
+        }}
+        onDelete={async (id) => {
+          const ok = await storage.deleteChatSession(id);
+          if (ok && id === activeSessionId) {
+            // The deleted session was the active one — clear
+            // local state so the user starts fresh.
+            setActiveSessionId(null);
+            setMessages([]);
+          }
+          // Force the history sheet to re-enumerate next open.
+          setHistoryTick((t) => t + 1);
+          return ok;
+        }}
+        // Re-enumerate on any open so newly-sent messages appear.
+        reloadTick={historyTick}
+      />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -476,8 +714,243 @@ export function ChatScreen() {
   );
 }
 
+// v0.10 (issue #70): history sheet — modal showing every chat
+// session with date, message count, and active highlight. Tapping
+// a row switches the active session; long-press (or a dedicated
+// Delete button) deletes it with confirmation. Previews do NOT
+// show message text — only the start date and a count — to
+// prevent the user's exact phrasing from being exposed when the
+// list is visible to a screen reader or shoulder-surfer.
+function ChatHistorySheet({
+  visible,
+  activeSessionId,
+  onClose,
+  onSwitch,
+  onDelete,
+  reloadTick,
+}: {
+  visible: boolean;
+  activeSessionId: string | null;
+  onClose: () => void;
+  onSwitch: (id: string) => void;
+  onDelete: (id: string) => Promise<boolean>;
+  reloadTick: number;
+}) {
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      const { sessions: all, unreadable } = await storage.getAllChatSessions();
+      if (cancelled) return;
+      setSessions(all);
+      setLoading(false);
+      if (unreadable.length > 0) {
+        setError(`${unreadable.length} session(s) couldn't be read.`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // reloadTick is a no-op dep that the parent bumps after a
+    // delete or send so the sheet re-enumerates the list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, reloadTick]);
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+      accessibilityViewIsModal
+    >
+      <View style={historyStyles.backdrop}>
+        <View style={historyStyles.sheet}>
+          <View style={historyStyles.headerRow}>
+            <Text style={historyStyles.title} accessibilityRole="header">
+              Chat history
+            </Text>
+            <Pressable
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close history"
+              style={({ pressed }) => [historyStyles.closeBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={historyStyles.closeBtnText}>Close</Text>
+            </Pressable>
+          </View>
+
+          {loading && (
+            <View style={historyStyles.center}>
+              <Text style={historyStyles.centerText}>Loading…</Text>
+            </View>
+          )}
+          {error && !loading && (
+            <View
+              style={historyStyles.errorBanner}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+            >
+              <Text style={historyStyles.errorText}>{error}</Text>
+            </View>
+          )}
+          {!loading && sessions.length === 0 && (
+            <View style={historyStyles.center}>
+              <Text style={historyStyles.emptyEmoji}>💬</Text>
+              <Text style={historyStyles.emptyTitle}>No conversations yet.</Text>
+              <Text style={historyStyles.emptySub}>
+                Start a chat and it'll show up here. New conversations don't delete older ones.
+              </Text>
+            </View>
+          )}
+
+          {!loading && sessions.length > 0 && (
+            <ScrollView style={historyStyles.list}>
+              {sessions.map((s) => {
+                const isActive = s.id === activeSessionId;
+                const startDate = new Date(s.startedAt);
+                const dateLabel = isToday(startDate)
+                  ? `Today, ${formatTime(startDate)}`
+                  : isYesterday(startDate)
+                    ? `Yesterday, ${formatTime(startDate)}`
+                    : `${formatDate(startDate)}, ${formatTime(startDate)}`;
+                return (
+                  <View
+                    key={s.id}
+                    style={[historyStyles.row, isActive && historyStyles.rowActive]}
+                  >
+                    <Pressable
+                      onPress={() => onSwitch(s.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        isActive
+                          ? `Current conversation, ${s.messages.length} messages, started ${dateLabel}`
+                          : `Switch to conversation from ${dateLabel}, ${s.messages.length} messages`
+                      }
+                      accessibilityState={{ selected: isActive }}
+                      style={({ pressed }) => [
+                        historyStyles.rowMain,
+                        pressed && { opacity: 0.85 },
+                      ]}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={historyStyles.rowDate}>{dateLabel}</Text>
+                        <Text style={historyStyles.rowMeta}>
+                          {s.messages.length} message
+                          {s.messages.length === 1 ? '' : 's'}
+                          {isActive ? ' · current' : ''}
+                        </Text>
+                      </View>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        Alert.alert(
+                          'Delete this conversation?',
+                          'This permanently removes the chat from this device. Cannot be undone.',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Delete',
+                              style: 'destructive',
+                              onPress: async () => {
+                                const ok = await onDelete(s.id);
+                                if (!ok) {
+                                  Alert.alert(
+                                    "Couldn't delete",
+                                    'Please try again, or close and reopen the app.',
+                                  );
+                                }
+                              },
+                            },
+                          ],
+                        );
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete conversation from ${dateLabel}`}
+                      style={({ pressed }) => [
+                        historyStyles.deleteBtn,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                    >
+                      <Text style={historyStyles.deleteBtnText}>Delete</Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function isToday(d: Date): boolean {
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+function isYesterday(d: Date): boolean {
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  return (
+    d.getFullYear() === y.getFullYear() &&
+    d.getMonth() === y.getMonth() &&
+    d.getDate() === y.getDate()
+  );
+}
+function formatDate(d: Date): string {
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function formatTime(d: Date): string {
+  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  // v0.10 (issue #79): chat load-error chip. Sits above the
+  // KeyboardAvoidingView so it always renders even when the
+  // keyboard is up. Same color/tone as the TodayScreen chip.
+  loadErrorChip: {
+    backgroundColor: colors.yellow100,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    marginHorizontal: space.s6,
+    marginTop: space.s2,
+    borderRadius: radius.md,
+  },
+  loadErrorText: { ...t.small, color: colors.text, textAlign: 'center' },
+
+  // v0.10 (issue #70): chat control row sits above the message
+  // list. Two compact buttons — New + History — so the user has
+  // conversation controls without leaving the chat surface.
+  chatControls: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: space.s6,
+    paddingVertical: space.s2,
+  },
+  chatCtrlBtn: {
+    minHeight: 44,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.lavender300,
+    backgroundColor: colors.paper2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatCtrlBtnText: { ...t.bodyBold, color: colors.lavender700, fontSize: 13 },
   empty: { paddingHorizontal: space.s6, paddingTop: 80, alignItems: 'center' },
   emptyEmoji: { fontSize: 48, marginBottom: space.s5 },
   emptyTitle: { ...t.title, fontSize: 24, color: colors.text, marginBottom: space.s2 },
@@ -519,7 +992,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: radius.full,
-    minHeight: 36,
+    // v0.10 (issue #62): minHeight 44pt (WCAG 2.5.5) — was 36pt
+    // which fell below the recommended tap target. The
+    // shadow + label adds visual weight; the larger touch
+    // area is easier to hit one-handed on the chat surface.
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
     boxShadow: '0 4px 12px rgba(42, 36, 56, 0.18)',
@@ -577,4 +1054,87 @@ const styles = StyleSheet.create({
   },
   micSoonText: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
   micIcon: { color: colors.paper, fontSize: 18, fontWeight: '700' },
+});
+
+// v0.10 (issue #70): history sheet styles. Separate stylesheet
+// to keep the chat-screen styles readable.
+const historyStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: colors.scrim,
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: colors.paper,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    paddingHorizontal: space.s6,
+    paddingTop: space.s5,
+    paddingBottom: space.s7,
+    maxHeight: '85%',
+    minHeight: 320,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: space.s4,
+  },
+  title: { ...t.title, fontSize: 22, color: colors.text },
+  closeBtn: {
+    minHeight: 44,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: radius.full,
+  },
+  closeBtnText: { ...t.bodyBold, color: colors.lavender700, fontSize: 14 },
+  center: { alignItems: 'center', paddingVertical: space.s7 },
+  centerText: { ...t.body, color: colors.textMuted },
+  emptyEmoji: { fontSize: 48, marginBottom: space.s3 },
+  emptyTitle: { ...t.title, fontSize: 18, color: colors.text, marginBottom: 4 },
+  emptySub: {
+    ...t.small,
+    color: colors.textMuted,
+    textAlign: 'center',
+    maxWidth: 280,
+  },
+  errorBanner: {
+    backgroundColor: colors.yellow100,
+    borderRadius: radius.md,
+    padding: 12,
+    marginBottom: space.s3,
+  },
+  errorText: { ...t.small, color: colors.text, textAlign: 'center' },
+  list: { maxHeight: 480 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.paper2,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    marginBottom: space.s2,
+    overflow: 'hidden',
+  },
+  rowActive: { borderColor: colors.accentSelected, borderWidth: 2 },
+  rowMain: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    minHeight: 56,
+    justifyContent: 'center',
+  },
+  rowDate: { ...t.bodyBold, color: colors.text, fontSize: 14, marginBottom: 2 },
+  rowMeta: { ...t.small, color: colors.textMuted, fontSize: 12 },
+  deleteBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minHeight: 56,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: colors.line,
+  },
+  deleteBtnText: { ...t.bodyBold, color: colors.warn, fontSize: 13 },
 });
