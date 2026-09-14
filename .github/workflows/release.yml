@@ -13,7 +13,7 @@ permissions:
 jobs:
   build:
     name: EAS Build + Submit
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
