@@ -56,7 +56,18 @@
     "metro-config": "0.84.6",
     "metro-transform-worker": "0.84.6",
     "nanoid": "3.3.19",
-    "brace-expansion": "5.0.9",
+    "@expo/fingerprint": {
+      "minimatch": {
+        "brace-expansion": "5.0.9"
+      }
+    },
+    "rimraf": {
+      "glob": {
+        "minimatch": {
+          "brace-expansion": "5.0.9"
+        }
+      }
+    },
     "@expo/plist": {
       "@xmldom/xmldom": "0.8.15"
     },
