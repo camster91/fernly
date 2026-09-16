@@ -14,7 +14,7 @@ concurrency:
 jobs:
   quality:
     name: Typecheck · Lint · Format · Test
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
 
     steps:
@@ -55,9 +55,12 @@ jobs:
   # re-run; shares the node_modules cache).
   web-bundle:
     name: Expo web export
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     needs: quality
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout
@@ -101,9 +104,12 @@ jobs:
   # triggered, by which point the user is waiting on TestFlight.
   prebuild:
     name: Validate native config (prebuild dry-run)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 8
     needs: quality
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout
