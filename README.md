@@ -1,116 +1,108 @@
 # Fernly
 
-> A wellness companion for Gen Z. Mobile-first, hybrid text + voice, mixed CBT/ACT. Soft pastel design system + a working v0 Expo app.
+A gentle, mobile-first wellness companion for Gen Z, built with Expo and React Native. Mood check-ins, short CBT/ACT practices and a supportive chat, with crisis detection that always comes first.
 
-**Status:** v0 alpha — built 2026-07-10 in one evening. Crisis detection shipped. Real LLM chat, voice, and App Store submission are next.
+<img src="spec/build/00-today-with-data.png" alt="Fernly Today screen" width="280">
 
----
+## What it does
 
-## What's in this repo
+Fernly is an early-stage (v0.9, pre-release) wellness app that mixes ideas from cognitive behavioural therapy (CBT) and acceptance and commitment therapy (ACT) into small daily moments: a 30-second mood check-in, a few minutes of practice, and a place to talk things through. It runs on iOS, Android and the web from one TypeScript codebase.
 
-| Path                          | What it is                                                                      |
-| ----------------------------- | ------------------------------------------------------------------------------- |
-| `App.tsx`, `src/`             | The working Expo app (SDK 57, React Native 0.86, React 19.2)                    |
-| `spec/index.html`             | Design system + 30 screen mocks + 4 brand mark explorations. Open in a browser. |
-| `spec/build/*.png`            | Screenshots of the live v0 on a phone-sized viewport                            |
-| `plans/01-product-plan.md`    | The product plan: positioning, stack, 8-week arc, risks                         |
-| `plans/02-naming-decision.md` | How we landed on Fernly (Tide → Olio → Fernly)                                  |
+Fernly is not therapy and does not replace professional care. Every chat message passes through an on-device crisis detector before anything else happens; if it matches, the user sees localized crisis line resources and the message is never sent to a chat backend.
 
----
+## Features
 
-## Running the app
+- **Onboarding**: five steps (name, mood, goals, mascot, preferred tone) with validation, saved to the device
+- **Today**: greeting, weekly streak strip and three cards (mood check-in, today's practice, chat)
+- **Mood check-in**: emoji picker with quick-word tags
+- **Chat**: tone-aware replies (soft, direct or playful). Uses a configurable chat backend when one is set and falls back to on-device placeholder replies otherwise
+- **Practice**: a library of eight CBT, ACT and body-based exercises; box breathing (live 4-4-4-4 cycle) is fully built, the rest are marked "coming soon"
+- **Insights**: SVG line chart of mood over time with an average
+- **Profile and settings**: stats, mascot avatar and a full local reset
+- **Crisis detection**: hard-pattern and soft-signal detector with an always-on-top modal and locale-aware hotline numbers (for example 988 in the US)
+- **Sensitive data partition**: chat history is kept in `expo-secure-store` (Keychain / Keystore); profile and mood data in AsyncStorage
+- **Optional crash reporting** via Sentry, only when a real DSN is configured
+
+### Screenshots
+
+| Onboarding | Chat | Insights | Crisis modal |
+|---|---|---|---|
+| <img src="spec/build/01-onboarding-step1.png" width="180"> | <img src="spec/build/tab-chat.png" width="180"> | <img src="spec/build/tab-insights.png" width="180"> | <img src="spec/build/crisis-02-modal.png" width="180"> |
+
+The full design system, 30 screen mocks and brand mark explorations are in [`spec/index.html`](spec/index.html) (open it in a browser).
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| App | Expo SDK 57, React Native 0.86, React 19, TypeScript |
+| Navigation | React Navigation 7 (bottom tabs + native stack) |
+| Storage | AsyncStorage, expo-secure-store |
+| Native | expo-haptics, expo-localization, react-native-svg |
+| Web | react-native-web |
+| Monitoring | sentry-expo (opt-in) |
+| Testing | Vitest |
+| Quality | ESLint, Prettier, `tsc --noEmit` |
+| Release | EAS Build and Submit, triggered by version tags |
+
+## Getting started
+
+Requires Node 20 or newer.
 
 ```bash
-cd ~/fernly-app
+git clone https://github.com/camster91/fernly.git
+cd fernly
 npm install
-npx expo start --web --port 8084
-# Opens at http://localhost:8084
+npm run web          # Expo in the browser
+npm start            # Expo dev server (scan with Expo Go or open a simulator)
 ```
 
-For an iOS simulator (after switching Xcode path with `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`):
+Native development builds:
 
 ```bash
-npx expo start --ios
+npm run ios
+npm run android
 ```
 
----
+Optional environment variables (set them in your shell or an untracked `.env`):
 
-## What's shipped (v0)
+- `EXPO_PUBLIC_CHAT_API_URL`: base URL of a chat backend that accepts `POST /chat`. Without it, chat uses local placeholder replies.
+- `EXPO_PUBLIC_SENTRY_DSN`: enables Sentry crash reporting.
 
-- [x] **Onboarding** — 5 steps, real validation, persists profile
-- [x] **Today** — greeting, streak strip, 3 context cards
-- [x] **Mood check-in** — 6-emoji picker, quick-word tags, persisted to AsyncStorage
-- [x] **Chat** — empty state, deterministic tone-aware mock replies, mic button toggle
-- [x] **Practice** — 8 exercises listed, box breathing fully built (live 4-4-4-4 cycle)
-- [x] **Insights** — real SVG line chart from mood data, average stat
-- [x] **Profile** — mascot avatar, stats, 6 settings rows
-- [x] **Crisis detection** — keyword + soft-signal detector, always-wins modal, 18/18 unit cases pass
+## Testing
 
-## What's NOT shipped yet
+```bash
+npm test             # crisis detector suite, then all unit tests
+npm run test:crisis  # crisis detector only
+npm run ci           # typecheck, lint, format check and tests
+```
 
-- [ ] Real LLM chat (FastAPI + GPT-4o-mini) — currently deterministic mock
-- [ ] Voice mode (Hailuo STT → text → ElevenLabs TTS playback)
-- [ ] 7 of 8 exercises (only box breathing is built; others are stubs)
-- [ ] Auth (anyone with the URL can use the web build)
-- [ ] App Store submission (TestFlight alpha target: ~5 weeks from initial build)
+Unit tests cover the crisis detector and its locale resources, the chat backend adapter, storage and date helpers.
 
----
+## Project structure
 
-## Design system
+```
+App.tsx              # App root
+index.ts             # Entry point and optional Sentry setup
+src/
+├── screens/         # Onboarding, Today, Mood check-in, Chat, Practice, Exercise, Insights, Profile, Settings
+├── components/      # Card, MoodPicker, CrisisModal, ErrorBoundary, ScreenContainer
+├── safety/          # Crisis detector and resources
+├── api/             # Chat backend adapter
+├── nav/             # Navigation
+├── data/            # Exercises and mascots
+├── storage.ts       # AsyncStorage and SecureStore partition
+└── theme.ts         # Design tokens
+spec/                # Design system, screen mocks and app screenshots
+plans/               # Product plan and reviews
+```
 
-Soft pastel palette. Lavender as primary accent, peach/yellow/mint/rose as accent backgrounds. Inter + Nunito (system fallback in v0). All tokens defined in `src/theme.ts` and mirrored in `spec/index.html`.
+## Design
 
-| Token         | Hex       | Use                                         |
-| ------------- | --------- | ------------------------------------------- |
-| `lavender500` | `#9B7DD4` | Primary accent · buttons, links, key states |
-| `peach500`    | `#F5895A` | Warm accent, streak celebration             |
-| `mint300`     | `#8FDDB4` | Success, completed states                   |
-| `rose500`     | `#E55D75` | Warnings, crisis, recording                 |
-| `ink`         | `#2A2438` | Primary text                                |
-| `paper`       | `#FBF9F6` | App background · warm, never pure white     |
+Soft pastel palette with lavender as the primary accent and peach, mint and rose as supporting colours on a warm off-white background. All tokens live in `src/theme.ts` and are mirrored in the design spec.
 
----
-
-## The brand mark
-
-The fern frond SVG lives in `src/components/BrandMark.tsx`. **It's currently a placeholder geometry** — production-ready mark needs a real designer. See `spec/index.html` section 01.5 for the full exploration (4 AI-rendered concepts + designer brief).
-
----
-
-## Safety
-
-Crisis detection runs on every user message before the LLM. If a hard pattern matches (e.g. "I want to kill myself", "don't want to be alive"), a modal appears with hotline resources and **the LLM never sees the message**. The detector is at `src/safety/crisis.ts` and has a soft-signal layer that logs patterns without blocking.
-
-The plan still flags a **clinical advisor** as the highest-risk deferred decision. Crisis detection is a real safety net but not a substitute for a licensed psychologist reviewing prompts.
-
-## Privacy & storage partition
-
-Fernly splits local data between two stores depending on sensitivity:
-
-- **AsyncStorage (unencrypted, OS-level):** profile, mood entries, onboarding complete flag, exercise sessions, active-chat-session UUID. These are useful across app reinstalls and don't carry crisis-flagged text.
-- **`expo-secure-store` (encrypted, device-unlock-gated):** chat history messages (which can include "kms" / "I want to die" / etc.). On iOS this is the Keychain; on Android it's the Keystore. The crisis-pattern audit log also lives here and intentionally survives Profile → Reset.
-
-**Web partition:** `expo-secure-store` on web falls back to `localStorage` with no OS-level encryption. The chat history is therefore plaintext on a web deploy — anyone with devtools access to that browser can read it. This is inherent to the browser sandbox; web is appropriate for self-hosted / preview deploys, not for storing private health data on a shared device. Mobile (iOS/Android) is the recommended surface for production use.
-
----
-
-## Repo conventions
-
-- `main` branch is the source of truth. No long-lived feature branches yet.
-- Source files: TypeScript, organized under `src/` by concern (`screens/`, `components/`, `data/`, `safety/`, `nav/`, `theme.ts`).
-- No tests yet. Crisis detector has an inline 18-case smoke test; that should grow.
-- Don't commit `node_modules/` (already in `.gitignore`).
-
----
-
-## Plan & context
-
-This project started as a Telegram conversation. The full plan (`plans/01-product-plan.md`) and naming decision (`plans/02-naming-decision.md`) are in this repo. The original spec with 30 screen mocks and brand mark exploration is `spec/index.html` — open it in a browser.
-
-If you're picking this up fresh, the **single most important read** is `plans/01-product-plan.md`. It tells you what we're building, why, and the 8-week arc from v0 to TestFlight alpha.
-
----
+See [plans/01-product-plan.md](plans/01-product-plan.md) for positioning and the product plan, and [SECURITY.md](SECURITY.md) for reporting security issues.
 
 ## License
 
-Private — not yet licensed. All rights reserved until open-source decision is made.
+All rights reserved. See [LICENSE](LICENSE).
