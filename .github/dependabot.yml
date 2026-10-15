@@ -25,4 +25,15 @@ updates:
         patterns:
           - 'react-native'
           - 'react-native-*'
+      # react-dom pins react to the exact same version, so they must move
+      # together or `npm ci` fails.
+      react:
+        patterns:
+          - 'react'
+          - 'react-dom'
       # Everything else updates individually.
+    ignore:
+      # @react-native/eslint-config peers on eslint ^8 || ^9; a major bump
+      # breaks `npm ci` until RN's config supports it.
+      - dependency-name: 'eslint'
+        update-types: ['version-update:semver-major']
