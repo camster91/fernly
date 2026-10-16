@@ -6,20 +6,21 @@ each subsequent release is just `git tag v0.X.0 && git push`.
 
 ## Prerequisites (do ONCE)
 
-### 1. Apple App Store Connect API key
+### 1. Apple App Store Connect API key + app ID
 
-1. https://appstoreconnect.apple.com → Users / Keys / Generate
+1. https://appstoreconnect.apple.com → Users and Access → Integrations →
+   App Store Connect API → Generate a key with "App Manager" access.
 2. Download the `.p8` file. **Save it now — you can't re-download.**
-3. Note the Issuer ID and Key ID.
-4. Convert the `.p8` to base64:
+3. Store it on EAS (one time, from your machine):
    ```sh
-   base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy
+   eas credentials --platform ios
+   # → production → App Store Connect: Manage your API Key → Add a new key
    ```
-5. In GitHub: Settings → Secrets and variables → Actions →
-   New repository secret. Add:
-   - `ASC_API_KEY_BASE64` — the base64 string from step 4
-   - `ASC_KEY_ID` — the Key ID from step 3
-   - `ASC_ISSUER_ID` — the Issuer ID from step 3
+   CI then uses this key automatically; no Apple secrets go in GitHub.
+4. Find the app's **Apple ID** (a number) in App Store Connect → your app →
+   App Information, and put it in `eas.json` →
+   `submit.production.ios.ascAppId`. The release workflow refuses to run
+   while it still says `REPLACE_WITH_APP_STORE_CONNECT_APP_ID`.
 
 ### 2. Google Play Console service account
 
@@ -40,29 +41,12 @@ each subsequent release is just `git tag v0.X.0 && git push`.
 4. Copy the token.
 5. In GitHub: New repository secret → `EXPO_TOKEN` — paste.
 
-### 4. eas.json profile (one-time local)
+### 4. eas.json
 
-Ensure `eas.json` has a `production` profile that uses
-`autoIncrement: true` so TestFlight doesn't reject duplicate
-build numbers. The shipped repo already has this; verify with:
-
-```sh
-cat eas.json
-```
-
-Expected structure:
-
-```json
-{
-  "build": {
-    "production": {
-      "autoIncrement": true
-    }
-  }
-}
-```
-
-If absent, run `eas build:configure` to generate one.
+`eas.json` is committed. It uses `appVersionSource: "remote"` with
+`autoIncrement: true`, so EAS keeps the build-number counter and
+TestFlight / Play never see a duplicate — even though CI runners are
+thrown away after each run.
 
 ## Releasing v0.9.0
 
@@ -94,29 +78,27 @@ open "https://github.com/camster91/fernly/actions/workflows/release.yml"
 ## What the workflow does
 
 `.github/workflows/release.yml` is the canonical pipeline.
-When you push a `v*.*.*` tag, it:
+When you push a `v*.*.*` tag (or run it manually), it:
 
-1. **Build for iOS (TestFlight)** — `eas build --platform ios --non-interactive --no-wait`
-2. **Submit iOS to TestFlight** — `eas submit --platform ios --latest --auto-submit`
-3. **Build for Android (Internal track)** — `eas build --platform android --non-interactive --no-wait`
-4. **Submit Android to Play Internal** — `eas submit --platform android --latest --track internal`
-5. **Bump version on main** — increments `package.json` version, commits
-   `[skip ci]` so the new version is on `main` for the next release.
-
-Steps run sequentially because TestFlight + Play both depend on the
-build finishing first.
+1. **Quality gate** — `npm run ci` (typecheck, lint, format, tests). The
+   build job only starts if this passes.
+2. **Build iOS** — `eas build --platform ios --profile production`. Waits
+   for the build to finish.
+3. **Submit iOS to TestFlight** — `eas submit --platform ios --latest`.
+4. **Build Android** — same, for Android.
+5. **Submit Android to Play Internal** — writes the
+   `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` secret to a temp file for
+   `eas submit`, then deletes it.
 
 ## After the first release
 
-Each subsequent release is just:
+The workflow does **not** bump the version. Before tagging the next
+release, bump `version` in `app.json` and `package.json` on `main`, then:
 
 ```sh
 git tag v0.X.0
 git push origin v0.X.0
 ```
-
-The workflow reads the new tag, builds, submits, and bumps. No
-manual `git push origin main` needed — the workflow does it.
 
 ## Rolling back a release
 
@@ -135,9 +117,9 @@ Then fix the issue on `main`, retag with a patch bump
 
 - **"eas: command not found"** — install EAS CLI globally:
   `npm install -g eas-cli`.
-- **"build not found"** — the workflow's build step hasn't
-  completed yet; `eas submit --latest` finds nothing to submit.
-  Re-run the workflow once the build finishes.
+- **"App Store Connect API Keys cannot be set up in --non-interactive
+  mode"** — step 1.3 above wasn't done. Run `eas credentials --platform ios`
+  locally and add the key.
 - **Apple rejects the build for missing Info.plist keys** —
   re-run `npx expo prebuild --no-install --clean --platform ios`
   locally, fix `app.json`, commit, retag.
@@ -147,7 +129,7 @@ Then fix the issue on `main`, retag with a patch bump
 
 ## What this doc deliberately doesn't do
 
-- **No automatic version bumping on every commit.** Tags are
+- **No automatic version bumping.** Tags and version bumps are
   manual — you decide when to ship.
 - **No auto-release on PR merge.** PR-merged-to-main != "ready
   to ship". TestFlight reviews take hours; only push a tag when
