@@ -376,3 +376,75 @@ describe('crisis detector: matchedPhrase reporting (regression)', () => {
     expect(detectCrisis('hi').matchedPhrase).toBeUndefined();
   });
 });
+
+describe('crisis detector: benign idiom must not mask real ideation (regression)', () => {
+  it.each([
+    'I killed it at work today but honestly I want to kill myself',
+    'work is killing me and I want to die',
+    "I'm glad to be alive? no. I want to end it all",
+    'lol dying of laughter. jk i want to kill myself',
+  ])('"%s" must be hard', (input) => {
+    expect(detectCrisis(input).level).toBe('hard');
+  });
+  it.each(['I killed it at work today', 'work is killing me', 'I want to die laughing'])(
+    '"%s" stays none',
+    (input) => {
+      expect(detectCrisis(input).level).toBe('none');
+    },
+  );
+});
+
+describe('crisis detector: common phrasings (regression)', () => {
+  it.each([
+    'i wanna die',
+    'wanna die rn',
+    'I don’t want to have been alive',
+    'I don’t want to be alive',
+    'I wish I wasn’t alive',
+  ])('"%s" must be hard', (input) => {
+    expect(detectCrisis(input).level).toBe('hard');
+  });
+});
+
+describe('crisis modal: resource routing by region', () => {
+  const phones = (locale: string) =>
+    crisisResourcesFor(locale)
+      .map((r) => r.phone)
+      .filter(Boolean);
+  it('en-CA gets 988', () => {
+    expect(phones('en-CA')).toContain('988');
+  });
+  it('fr-CA gets 988, not France 3114', () => {
+    expect(phones('fr-CA')).toContain('988');
+    expect(phones('fr-CA')).not.toContain('3114');
+  });
+  it('es-US gets 988, not Mexico/Spain numbers', () => {
+    expect(phones('es-US')[0]).toBe('988');
+    expect(phones('es-US')).not.toContain('800 911 2000');
+  });
+  it('en-AU gets Lifeline 13 11 14', () => {
+    expect(phones('en-AU')).toContain('13 11 14');
+  });
+  it('en-IE gets Samaritans 116 123', () => {
+    expect(phones('en-IE')).toContain('116 123');
+  });
+  it('de-AT gets 142, de-CH gets 143, not the German number', () => {
+    expect(phones('de-AT')).toContain('142');
+    expect(phones('de-CH')).toContain('143');
+    expect(phones('de-AT')).not.toContain('0800 111 0 111');
+  });
+  it('es-ES gets 024', () => {
+    expect(phones('es-ES')[0]).toBe('024');
+  });
+  it('pt-PT does not get Brazil 188', () => {
+    expect(phones('pt-PT')).not.toContain('188');
+  });
+  it('unknown region falls back to directories, never another country’s number', () => {
+    expect(phones('es-AR')).toEqual([]);
+    expect(crisisResourcesFor('es-AR')[0].url).toContain('iasp.info');
+  });
+  it('accepts underscore and script subtags', () => {
+    expect(phones('en_GB')).toContain('116 123');
+    expect(phones('zh-Hant-TW').length).toBe(0);
+  });
+});

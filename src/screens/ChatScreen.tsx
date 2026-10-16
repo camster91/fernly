@@ -30,6 +30,7 @@ import { CrisisModal } from '../components/CrisisModal';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
 import { detectCrisis } from '../safety/crisis';
+import { newId } from '../util/id';
 import { MASCOT_EMOJI, MASCOT_EMOJI_FALLBACK } from '../data/mascots';
 import type { ChatMessage, ChatSession, CrisisAuditEntry, UserProfile, Tone } from '../types';
 import { fetchReply, readChatBackendUrl } from '../api/chat';
@@ -174,6 +175,13 @@ export function ChatScreen() {
       // CRISIS CHECK FIRST. If hard, the modal wins, the LLM never sees this.
       const verdict = detectCrisis(text);
 
+      // Show the crisis modal BEFORE any await, so a storage failure below
+      // can never hide it.
+      if (verdict.level === 'hard') {
+        setCrisisMatched(verdict.matchedPhrase);
+        setCrisisVisible(true);
+      }
+
       // Ensure there's an active session — create one if not. Single-flight
       // guard so concurrent sends share the same createChatSession
       // promise instead of racing each other (which used to create two
@@ -190,7 +198,7 @@ export function ChatScreen() {
       }
 
       const userMsg: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: newId(),
         role: 'user',
         text,
         at: new Date().toISOString(),
@@ -198,7 +206,7 @@ export function ChatScreen() {
 
       if (verdict.level === 'hard') {
         const blocked: ChatMessage = {
-          id: crypto.randomUUID(),
+          id: newId(),
           role: 'fernly',
           text: '[crisis modal shown — AI response suppressed]',
           at: new Date().toISOString(),
@@ -210,13 +218,11 @@ export function ChatScreen() {
         if (afterUser) setMessages(afterUser.messages);
         const afterBlocked = await storage.appendMessageToSession(sessionId, blocked);
         if (afterBlocked) setMessages(afterBlocked.messages);
-        setCrisisMatched(verdict.matchedPhrase);
-        setCrisisVisible(true);
         // Append a crisis audit entry. Survives clearAll(); stored in
         // encrypted SecureStore; schema-versioned.
         const audit: CrisisAuditEntry = {
           version: 1,
-          id: crypto.randomUUID(),
+          id: newId(),
           at: new Date().toISOString(),
           severity: 'hard',
           matchedPhrase: verdict.matchedPhrase,
@@ -230,7 +236,7 @@ export function ChatScreen() {
       if (verdict.level === 'soft' && verdict.matchedPhrase) {
         const softAudit: CrisisAuditEntry = {
           version: 1,
-          id: crypto.randomUUID(),
+          id: newId(),
           at: new Date().toISOString(),
           severity: 'soft',
           matchedPhrase: verdict.matchedPhrase,
@@ -261,7 +267,7 @@ export function ChatScreen() {
         replyText = mockReply(text, tone);
       }
       const replyMsg: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: newId(),
         role: 'fernly',
         text: replyText,
         at: new Date().toISOString(),
@@ -276,6 +282,9 @@ export function ChatScreen() {
       // previous behavior cleared `input` upfront on line 154 and
       // let any error propagate uncaught. See plans/05 P1-11.
       console.warn('[ChatScreen] send failed:', err);
+      // The crisis modal is already up; don't stack an error alert on top
+      // of it or put the crisis text back in the input.
+      if (detectCrisis(text).level === 'hard') return;
       setInput(draft);
       // Alert.alert is safe to use here — RN's Alert always renders on
       // both platforms; even if a render error boundary catches the

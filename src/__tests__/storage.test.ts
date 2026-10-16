@@ -351,3 +351,56 @@ describe('crisis audit cap', () => {
     expect(after.find((e) => e.id === 'old-499')).toBeUndefined();
   });
 });
+
+describe('reset: failed keychain deletes are surfaced, not hidden', () => {
+  it('throws and keeps the failed key indexed so a retry can delete it', async () => {
+    const kept = await storage.createChatSession([message('stuck')]);
+    const gone = await storage.createChatSession([message('ok')]);
+    secureStore.deleteItemAsync.mockImplementation(async (k: string) => {
+      if (k === sessionKey(kept.id)) throw new Error('keychain locked');
+      secureData.delete(k);
+    });
+
+    await expect(storage.clearAll()).rejects.toThrow(/1 chat session/);
+
+    expect(await storage.getChatSession(gone.id)).toBeNull();
+    const index = JSON.parse(asyncData.get(SESSION_INDEX) ?? '[]');
+    expect(index).toEqual([sessionKey(kept.id)]);
+
+    // Retry once the keychain is available again.
+    secureStore.deleteItemAsync.mockImplementation(async (k: string) => {
+      secureData.delete(k);
+    });
+    await storage.clearAll();
+    expect(await storage.getChatSession(kept.id)).toBeNull();
+    expect(asyncData.has(SESSION_INDEX)).toBe(false);
+  });
+});
+
+describe('getAllChatSessions (export + stats)', () => {
+  it('returns every indexed session, not just the active one', async () => {
+    const a = await storage.createChatSession([message('a')]);
+    const b = await storage.createChatSession([message('b')]);
+
+    const all = await storage.getAllChatSessions();
+
+    expect(all.map((s) => s.id).sort()).toEqual([a.id, b.id].sort());
+  });
+
+  it('includes sessions migrated from the legacy blob, once each', async () => {
+    secureData.set(LEGACY_CHATS, JSON.stringify([session('legacy')]));
+
+    const all = await storage.getAllChatSessions();
+
+    expect(all.map((s) => s.id)).toEqual(['legacy']);
+  });
+});
+
+describe('chat writes surface failures', () => {
+  it('appendMessageToSession rejects when the secure write fails', async () => {
+    const s = await storage.createChatSession();
+    secureStore.setItemAsync.mockRejectedValueOnce(new Error('value too large'));
+
+    await expect(storage.appendMessageToSession(s.id, message('big'))).rejects.toThrow();
+  });
+});

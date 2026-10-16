@@ -5,11 +5,13 @@
 // v0.5:
 //   - Locale wiring via expo-localization. Crisis resources match the
 //     user's device locale (en-US, en-GB, es, fr, pt, de, fallback IASP).
-//   - canOpenURL guards: a tap during crisis must not silently no-op.
+//   - Open failures show inline guidance: a tap during crisis must not
+//     silently no-op. (No canOpenURL pre-check — on Android 11+ it returns
+//     false for tel:/sms: unless the manifest declares them.)
 //   - SMS URL uses Platform.OS branch (iOS '&body=' vs Android '?body=').
 //   - Reachability banner warns when crisis-resource URLs are stale.
 //   - Dismiss requires a 1.5s long-press with visible progress bar.
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getLocales } from 'expo-localization';
 import {
   AccessibilityInfo,
@@ -47,7 +49,7 @@ const REACHABILITY_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 const DISMISS_LONGPRESS_MS = 1500;
 
 /** Pick the best locale for crisis resources from the device's preferred
- * locales. The crisis module recognises en-US, en-GB, es, fr, pt, de.
+ * locales. The crisis module routes by region (US, CA, GB, …), then language.
  *
  * v0.9: cached at module load via `MEMOIZED_PICKED_LOCALE` so every
  * CrisisModal render doesn't re-call `getLocales()`. On Render the
@@ -73,7 +75,9 @@ export function CrisisModal({ visible, locale, matchedPhrase: _matchedPhrase, on
   // If the caller didn't pass a locale, derive from the device prefs.
   // Pinned at mount — we don't re-render on OS locale changes mid-modal.
   const effectiveLocale = locale ?? pickLocale();
-  const resources = crisisResourcesFor(effectiveLocale);
+  // Memoized: `resources` is an effect dependency, and a fresh array on every
+  // render re-ran the effect, whose cleanup cleared the dismiss hold timer.
+  const resources = useMemo(() => crisisResourcesFor(effectiveLocale), [effectiveLocale]);
   const [openError, setOpenError] = useState<string | null>(null);
   const [unreachableBanner, setUnreachableBanner] = useState(false);
 
@@ -151,30 +155,25 @@ export function CrisisModal({ visible, locale, matchedPhrase: _matchedPhrase, on
         url = `tel:${resource.phone.replace(/\s/g, '')}`;
       } else if (resource.text) {
         // `&body=` is iOS; Android needs `?body=`. Branch on platform.
+        // resource.text is "<body> to <number>", e.g. "HOME to 741741".
+        const [body, number] = resource.text.split(' to ');
         const bodyParam = Platform.OS === 'ios' ? '&' : '?';
-        url = `sms:741741${bodyParam}body=${encodeURIComponent(resource.text.split(' to ')[0])}`;
+        url = `sms:${number.replace(/\s/g, '')}${bodyParam}body=${encodeURIComponent(body)}`;
       } else if (resource.url) {
         url = resource.url;
       }
       if (!url) return;
 
-      // canOpenURL check first — fail loudly with inline guidance.
-      const supported = await Linking.canOpenURL(url);
-      if (!supported) {
-        setOpenError(
-          `This device can't open ${resource.name}. ` +
-            (resource.phone
-              ? `Call ${resource.phone} from another phone, or text HOME to 741741.`
-              : resource.text
-                ? `Text HOME to 741741 from another device.`
-                : `Visit the URL in a browser.`),
-        );
-        return;
-      }
+      // Open directly; openURL rejects when nothing can handle the URL.
       await Linking.openURL(url);
     } catch {
       setOpenError(
-        `Couldn't open ${resource.name}. Try a different resource or call 988 directly.`,
+        `This device can't open ${resource.name}. ` +
+          (resource.phone
+            ? `Call ${resource.phone} from another phone, or try another resource below.`
+            : resource.text
+              ? `Text ${resource.text} from another device, or try another resource below.`
+              : `Visit ${resource.url} in a browser, or try another resource below.`),
       );
     }
   }
