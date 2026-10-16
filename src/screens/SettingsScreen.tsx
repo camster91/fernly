@@ -96,7 +96,7 @@ export function SettingsScreen({ navigation }: Props) {
   const exportData = useCallback(async () => {
     try {
       const moods = await storage.getMoods();
-      const chats = await storage.getChats();
+      const chats = await storage.getAllChatSessions();
       const session = await storage.getActiveSessionId();
       const profile = await storage.getProfile();
       // JSON export — the simplest portable format. Round-trip via

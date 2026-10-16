@@ -36,7 +36,7 @@ export function ProfileScreen({ navigation }: Props) {
           const p = await storage.getProfile();
           setProfile(p);
           const moods = await storage.getMoods();
-          const chats = await storage.getChats();
+          const chats = await storage.getAllChatSessions();
           // "DAYS" used to mean "days since account creation" — which is
           // misleading for a user who installed the app, never logged a
           // mood, and saw "100 DAYS" in their stats. Renamed to "ACTIVE
