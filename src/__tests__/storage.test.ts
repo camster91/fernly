@@ -447,6 +447,14 @@ describe('session completions', () => {
     expect(await storage.getCompletions()).toEqual([]);
   });
 
+  it('returns [] and still accepts new entries when the stored value is not valid JSON', async () => {
+    asyncData.set(COMPLETIONS, '{not json');
+    expect(await storage.getCompletions()).toEqual([]);
+
+    await storage.addCompletion(completion(1));
+    expect(await storage.getCompletions()).toEqual([completion(1)]);
+  });
+
   it('drops malformed entries on read', async () => {
     asyncData.set(
       COMPLETIONS,
