@@ -94,6 +94,17 @@ Fernly splits local data between two stores depending on sensitivity:
 
 ---
 
+## Generating audio
+
+The shipped `assets/audio/*.m4a` files are silent placeholders. To replace them with real narration (run once, on your own machine; dev-only, not part of the app):
+
+1. Review the scripts in `content/scripts/*.md` first. A pause is a line containing only `[pause Ns]`.
+2. Install `ffmpeg` (includes `ffprobe`) and set `OPENAI_API_KEY`.
+3. Run `npx tsx scripts/generate-audio.ts` (or pass one session id to regenerate just that one).
+4. The script prints `id durationSec` per session; copy those values into `durationSec` in `src/data/sessions.ts`.
+
+---
+
 ## Repo conventions
 
 - `main` branch is the source of truth. No long-lived feature branches yet.
