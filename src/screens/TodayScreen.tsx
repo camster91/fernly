@@ -9,6 +9,7 @@ import { Card, styles as cardStyles } from '../components/Card';
 import { moodLabel } from '../components/MoodPicker';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
+import { durationLabel, pickTodaySession } from '../data/sessions';
 import { localDateString } from '../util/date';
 import type { UserProfile, MoodEntry } from '../types';
 import type { RootStackParamList } from '../nav/RootNav';
@@ -106,6 +107,7 @@ export function TodayScreen() {
   );
 
   const hour = new Date().getHours();
+  const todaySession = pickTodaySession(new Date());
   const name = profile?.name || 'there';
   const firstName = name.split(' ')[0];
 
@@ -220,6 +222,19 @@ export function TodayScreen() {
             ? 'Tap to update — your latest entry wins for today.'
             : "Tap an emoji that fits. That's it."}
         </Text>
+      </Card>
+
+      <Card
+        variant="mint"
+        onPress={() => nav.navigate('Player', { sessionId: todaySession.id })}
+        accessibilityLabel={`Today's session: ${todaySession.title}, ${Math.max(1, Math.round(todaySession.durationSec / 60))} minutes`}
+        accessibilityHint="Opens the player"
+      >
+        <Text style={cardStyles.eyebrow}>
+          TODAY'S SESSION · {durationLabel(todaySession.durationSec)}
+        </Text>
+        <Text style={cardStyles.title}>{todaySession.title}</Text>
+        <Text style={cardStyles.sub}>{todaySession.blurb}</Text>
       </Card>
 
       <Card

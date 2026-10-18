@@ -116,3 +116,22 @@ export const CATEGORY_LABELS: Record<SessionCategory, string> = {
   sos: 'SOS',
   course: 'Basics course',
 };
+
+/**
+ * Today's suggested session: rotates through the meditate sessions (catalog
+ * order) by local day-of-year, Jan 1 = 0.
+ */
+export function pickTodaySession(date: Date): SessionDef {
+  const pool = sessions.filter((s) => s.category === 'meditate');
+  // Compare local midnights via UTC to avoid DST skewing the day count.
+  const dayOfYear = Math.round(
+    (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) -
+      Date.UTC(date.getFullYear(), 0, 1)) /
+      86_400_000,
+  );
+  return pool[dayOfYear % pool.length];
+}
+
+export function durationLabel(durationSec: number): string {
+  return `${Math.max(1, Math.round(durationSec / 60))} min`;
+}

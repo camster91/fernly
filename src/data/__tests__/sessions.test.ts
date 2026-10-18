@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { sessions } from '../sessions';
+import { pickTodaySession, sessions } from '../sessions';
 
 const root = join(__dirname, '..', '..', '..');
 const ids = sessions.map((s) => s.id);
@@ -58,5 +58,23 @@ describe('session catalog', () => {
     for (const s of sessions.filter((x) => x.category === 'sos')) {
       expect(s.durationSec).toBeLessThanOrEqual(180);
     }
+  });
+});
+
+describe('pickTodaySession', () => {
+  it('returns a meditate session', () => {
+    expect(pickTodaySession(new Date(2026, 9, 18)).category).toBe('meditate');
+  });
+
+  it('is stable for the same date, regardless of time of day', () => {
+    const a = pickTodaySession(new Date(2026, 9, 18, 0, 5));
+    const b = pickTodaySession(new Date(2026, 9, 18, 23, 55));
+    expect(a.id).toBe(b.id);
+  });
+
+  it('rotates on consecutive days', () => {
+    const picks = [0, 1, 2, 3, 4].map((i) => pickTodaySession(new Date(2026, 0, 1 + i)).id);
+    for (let i = 1; i < picks.length; i++) expect(picks[i]).not.toBe(picks[i - 1]);
+    expect(picks[0]).toBe(sessions.filter((s) => s.category === 'meditate')[0].id);
   });
 });
