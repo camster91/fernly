@@ -55,7 +55,8 @@ function PlayerBody({ session, source }: { session: SessionDef; source: number }
   const recordedRef = useRef(false);
 
   // Lock screen / media notification while this screen is mounted. The
-  // hook releases the player on unmount; we also pause and clear controls.
+  // hook's release() on unmount also clears the controls; we still pause and
+  // clear explicitly (each in its own try) so one failure can't skip the other.
   useEffect(() => {
     try {
       player.setActiveForLockScreen(true, { title: session.title, artist: 'Fernly' });
@@ -64,8 +65,12 @@ function PlayerBody({ session, source }: { session: SessionDef; source: number }
     }
     return () => {
       try {
-        player.pause();
         player.clearLockScreenControls();
+      } catch {
+        // Player may already be released.
+      }
+      try {
+        player.pause();
       } catch {
         // Player may already be released.
       }
@@ -92,14 +97,18 @@ function PlayerBody({ session, source }: { session: SessionDef; source: number }
     }
   }, [status.isLoaded, status.currentTime, status.duration, session.id]);
 
-  const togglePlay = () => {
+  const togglePlay = async () => {
     if (status.playing) {
       player.pause();
       return;
     }
     if (status.duration > 0 && status.currentTime >= status.duration - 0.5) {
       // Finished: replay from the start.
-      player.seekTo(0).catch(() => undefined);
+      try {
+        await player.seekTo(0);
+      } catch {
+        // Seek failed; play from wherever we are.
+      }
     }
     player.play();
   };

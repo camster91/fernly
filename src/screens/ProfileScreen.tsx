@@ -14,12 +14,6 @@ type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList>;
 };
 
-const TONE_LABEL: Record<string, string> = {
-  soft: '🕊 Soft',
-  direct: '⚡ Direct',
-  playful: '✨ Playful',
-};
-
 export function ProfileScreen({ navigation }: Props) {
   const nav = navigation;
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -110,7 +104,7 @@ export function ProfileScreen({ navigation }: Props) {
     // actually means. Plans/05-full-codebase-review-2026-07-22.md P1-8.
     Alert.alert(
       'Reset Fernly?',
-      'This clears your profile, mood entries, and any older chat history on this device. The crisis-pattern audit log (last 500 entries) is retained for safety review and is not user-editable. Cannot be undone.',
+      'This clears your profile, mood entries, meditation history, and any older chat history on this device. The crisis-pattern audit log (last 500 entries) is retained for safety review and is not user-editable. Cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -151,8 +145,7 @@ export function ProfileScreen({ navigation }: Props) {
         </View>
         <Text style={styles.name}>{profile?.name || '—'}</Text>
         <Text style={styles.subline}>
-          {profile ? TONE_LABEL[profile.tone] : ''}
-          {profile?.goals?.length ? ` · ${profile.goals.length} GOALS` : ''}
+          {profile?.goals?.length ? `${profile.goals.length} GOALS` : ''}
         </Text>
         <Text style={styles.subline}>Free forever · no ads · no account</Text>
       </View>
@@ -190,7 +183,6 @@ export function ProfileScreen({ navigation }: Props) {
 
       <View style={styles.section}>
         {row('🌙', 'Your mascot', profile ? MASCOT_EMOJI[profile.mascot] : undefined)}
-        {row('💬', 'Conversation tone', profile?.tone ? TONE_LABEL[profile.tone] : undefined)}
         {row(
           '🎯',
           'Your goals',
@@ -201,7 +193,7 @@ export function ProfileScreen({ navigation }: Props) {
             Reset stays here because it's destructive and benefits
             from the Profile context (the mascot emoji is right
             above it). See plans/05 P1-20. */}
-        {row('📥', 'Open Settings', 'Edit mascot, tone, goals. Export your data. Legal info.', () =>
+        {row('📥', 'Open Settings', 'Edit mascot, goals. Export your data. Legal info.', () =>
           nav.navigate('Settings'),
         )}
         {row('🗑', 'Reset Fernly', 'Tap to clear all your data', reset, true)}

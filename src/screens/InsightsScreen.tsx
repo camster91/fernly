@@ -112,6 +112,7 @@ export function InsightsScreen() {
         <Text style={styles.h1}>Your week</Text>
       </View>
 
+      <Text style={styles.allTime}>ALL TIME</Text>
       <View style={styles.tiles}>
         <StatTile
           value={stats.minutes}
@@ -123,7 +124,11 @@ export function InsightsScreen() {
           label="Sessions"
           a11y={`${stats.sessions} sessions completed`}
         />
-        <StatTile value={stats.streak} label="Day streak" a11y={`${stats.streak} day streak`} />
+        <StatTile
+          value={stats.streak}
+          label="Meditation streak"
+          a11y={`${stats.streak} day meditation streak`}
+        />
       </View>
 
       <Card>
@@ -270,6 +275,12 @@ function StatTile({ value, label, a11y }: { value: number; label: string; a11y: 
 }
 
 const styles = StyleSheet.create({
+  allTime: {
+    ...t.eyebrow,
+    color: colors.textMuted,
+    paddingHorizontal: space.s6,
+    marginBottom: space.s2,
+  },
   tiles: {
     flexDirection: 'row',
     flexWrap: 'wrap',
