@@ -35,8 +35,9 @@ no ads, no account.** The edge over Headspace is price, not feature count.
 Tabs: **Today · Meditate · Practice · Insights · You**. Chat tab removed.
 
 - A **"Need help now?"** button in the header of every tab opens the
-  existing `CrisisModal` (manual open; same helplines, same long-press
-  dismiss).
+  existing `CrisisModal` (manual open; same helplines). Because it is only
+  user-opened, the modal now has a plain Close button (and Android back)
+  instead of the long-press dismiss.
 - New stack screen **Player** (pushed from Meditate or Today).
 
 ## 2. Content

@@ -4,7 +4,7 @@
 
 Fernly is a free, offline guided-meditation app built on Expo SDK 57 (React Native). It handles sensitive content: mood logs, meditation history, and crisis helpline resources. Everything is stored on the device.
 
-Because we process crisis-flagged text, **security reports get routed straight to a human, never auto-triaged.** A missed report is worse than a slow response.
+Fernly has no chat and no account, and your data stays on your device, but it is still sensitive (moods, meditation history). **Security reports get routed straight to a human, never auto-triaged.** A missed report is worse than a slow response.
 
 ## Supported versions
 

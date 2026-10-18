@@ -26,7 +26,7 @@ Out, two, three, four, five, six.
 
 [pause 4s]
 
-You are safe in this moment. Feel your feet on the floor. Feel the weight of your body being held.
+Right now, you are here, and you are breathing. Feel your feet on the floor. Feel the weight of your body being held.
 
 [pause 8s]
 
@@ -42,7 +42,7 @@ Keep breathing slowly. In for four, out for six.
 
 [pause 4s]
 
-Your heart may still be racing, and that's okay. The wave is already getting smaller. You can ride it out.
+Your heart may still be racing, and that's okay. Waves like this rise, and they fall. You can ride it out.
 
 [pause 2s]
 

@@ -245,7 +245,7 @@ export function TodayScreen() {
       >
         <Text style={cardStyles.eyebrow}>TODAY'S PRACTICE</Text>
         <Text style={cardStyles.title}>Box breathing</Text>
-        <Text style={cardStyles.sub}>4 minutes. Calms your nervous system fast.</Text>
+        <Text style={cardStyles.sub}>4 minutes. A quick reset when things feel like a lot.</Text>
       </Card>
     </ScreenContainer>
   );

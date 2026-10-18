@@ -96,6 +96,7 @@ The shipped `assets/audio/*.m4a` files are silent placeholders. To replace them 
 2. Install `ffmpeg` (includes `ffprobe`) and set `OPENAI_API_KEY`.
 3. Run `npx tsx scripts/generate-audio.ts` (or pass one session id to regenerate just that one).
 4. The script prints `id durationSec` per session; copy those values into `durationSec` in `src/data/sessions.ts`.
+5. Verify with `npx tsx scripts/check-audio.ts`. It fails if any file is still a placeholder (under 20 KB) or missing. The release workflow runs it before building; `npm run ci` does not, so placeholders still pass normal CI.
 
 ---
 
@@ -103,7 +104,7 @@ The shipped `assets/audio/*.m4a` files are silent placeholders. To replace them 
 
 - `main` branch is the source of truth. No long-lived feature branches yet.
 - Source files: TypeScript, organized under `src/` by concern (`screens/`, `components/`, `data/`, `safety/`, `nav/`, `theme.ts`).
-- No tests yet. Crisis detector has an inline 18-case smoke test; that should grow.
+- Tests use vitest (`npm test`); `npm run ci` runs typecheck, lint, format check, and tests.
 - Don't commit `node_modules/` (already in `.gitignore`).
 
 ---

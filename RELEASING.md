@@ -82,11 +82,15 @@ When you push a `v*.*.*` tag (or run it manually), it:
 
 1. **Quality gate** — `npm run ci` (typecheck, lint, format, tests). The
    build job only starts if this passes.
-2. **Build iOS** — `eas build --platform ios --profile production`. Waits
+2. **Audio gate** — `npx tsx scripts/check-audio.ts` fails the release if any
+   `assets/audio/*.m4a` is a placeholder (under 20 KB) or a catalog session has
+   no audio. Generate real narration first (README, "Generating audio"). This
+   check is deliberately not in `npm run ci`, so placeholders still pass normal CI.
+3. **Build iOS** — `eas build --platform ios --profile production`. Waits
    for the build to finish.
-3. **Submit iOS to TestFlight** — `eas submit --platform ios --id <this build>` (by build ID, so an overlapping run can't swap builds).
-4. **Build Android** — same, for Android.
-5. **Submit Android to Play Internal** — writes the
+4. **Submit iOS to TestFlight** — `eas submit --platform ios --id <this build>` (by build ID, so an overlapping run can't swap builds).
+5. **Build Android** — same, for Android.
+6. **Submit Android to Play Internal** — writes the
    `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` secret to a temp file for
    `eas submit`, then deletes it.
 
