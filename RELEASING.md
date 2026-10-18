@@ -84,7 +84,7 @@ When you push a `v*.*.*` tag (or run it manually), it:
    build job only starts if this passes.
 2. **Build iOS** — `eas build --platform ios --profile production`. Waits
    for the build to finish.
-3. **Submit iOS to TestFlight** — `eas submit --platform ios --latest`.
+3. **Submit iOS to TestFlight** — `eas submit --platform ios --id <this build>` (by build ID, so an overlapping run can't swap builds).
 4. **Build Android** — same, for Android.
 5. **Submit Android to Play Internal** — writes the
    `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` secret to a temp file for

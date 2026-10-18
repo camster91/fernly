@@ -404,3 +404,15 @@ describe('chat writes surface failures', () => {
     await expect(storage.appendMessageToSession(s.id, message('big'))).rejects.toThrow();
   });
 });
+
+describe('getAllChatSessions when legacy migration fails', () => {
+  it('still returns the legacy sessions', async () => {
+    secureData.set(LEGACY_CHATS, JSON.stringify([session('legacy-a'), session('legacy-b')]));
+    secureStore.setItemAsync.mockRejectedValueOnce(new Error('keychain locked'));
+
+    const all = await storage.getAllChatSessions();
+
+    expect(all.map((s) => s.id).sort()).toEqual(['legacy-a', 'legacy-b']);
+    expect(secureData.has(LEGACY_CHATS)).toBe(true);
+  });
+});

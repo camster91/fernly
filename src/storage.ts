@@ -443,15 +443,21 @@ export const storage = {
   // Every chat session on this install: runs the legacy migration, then
   // reads each key in the session index. Used by data export and the
   // profile stats counter (getChats() alone returns [] after migration).
+  //
+  // If the legacy migration fails, getChats() still returns the legacy
+  // sessions (the blob is kept) but they aren't indexed yet, so merge them in.
   async getAllChatSessions(): Promise<ChatSession[]> {
-    await storage.getChats();
+    const legacy = await storage.getChats();
     const keys = await readSessionIndex();
-    const sessions = await Promise.all(
+    const indexed = await Promise.all(
       keys
         .filter((k) => k.startsWith(SESSION_KEY_PREFIX))
         .map((k) => storage.getChatSession(k.slice(SESSION_KEY_PREFIX.length))),
     );
-    return sessions.filter((s): s is ChatSession => s !== null);
+    const byId = new Map<string, ChatSession>();
+    for (const s of legacy) byId.set(s.id, s);
+    for (const s of indexed) if (s) byId.set(s.id, s);
+    return [...byId.values()];
   },
 
   // Legacy single-blob addChat: re-implemented as setChatSession +

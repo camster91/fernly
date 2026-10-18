@@ -44,22 +44,28 @@ jobs:
             echo "::error::Set submit.production.ios.ascAppId in eas.json (see RELEASING.md)."
             exit 1
           fi
-      # Without --no-wait, `eas build` blocks until the build finishes, so
-      # `eas submit --latest` below picks up THIS build, not the previous one.
+      # `eas build` waits for the build to finish. We submit by build ID, not
+      # --latest, so an overlapping run can't make us submit someone else's build.
       - name: Build iOS
-        run: eas build --platform ios --profile production --non-interactive
+        id: ios
+        run: |
+          eas build --platform ios --profile production --non-interactive --json > ios-build.json
+          echo "build_id=$(jq -r '.[0].id' ios-build.json)" >> "$GITHUB_OUTPUT"
       # Uses the App Store Connect API key stored on EAS via
       # `eas credentials --platform ios` (one-time setup, see RELEASING.md).
       - name: Submit iOS to TestFlight
-        run: eas submit --platform ios --profile production --latest --non-interactive
+        run: eas submit --platform ios --profile production --id "${{ steps.ios.outputs.build_id }}" --non-interactive
       - name: Build Android
-        run: eas build --platform android --profile production --non-interactive
+        id: android
+        run: |
+          eas build --platform android --profile production --non-interactive --json > android-build.json
+          echo "build_id=$(jq -r '.[0].id' android-build.json)" >> "$GITHUB_OUTPUT"
       - name: Write Play service account key
         env:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
         run: printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" > google-play-service-account.json
       - name: Submit Android to Play Internal
-        run: eas submit --platform android --profile production --latest --non-interactive
+        run: eas submit --platform android --profile production --id "${{ steps.android.outputs.build_id }}" --non-interactive
       - name: Remove Play service account key
         if: always()
         run: rm -f google-play-service-account.json

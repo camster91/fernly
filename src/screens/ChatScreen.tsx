@@ -170,6 +170,9 @@ export function ChatScreen() {
     // worst possible failure mode. See plans/05 P1-11.
     const draft = input;
     setInput('');
+    // Set once the user's message is saved. After that, a failure must not
+    // put the text back for a retry, or the retry would save it twice.
+    let userSaved = false;
 
     try {
       // CRISIS CHECK FIRST. If hard, the modal wins, the LLM never sees this.
@@ -189,10 +192,13 @@ export function ChatScreen() {
       let sessionId = activeSessionId;
       if (!sessionId) {
         if (!sessionCreateRef.current) {
-          sessionCreateRef.current = storage.createChatSession([]);
+          // Clear the shared promise however it settles. If a rejected one
+          // stayed cached, every later send would await it and fail.
+          sessionCreateRef.current = storage.createChatSession([]).finally(() => {
+            sessionCreateRef.current = null;
+          });
         }
         const session = await sessionCreateRef.current;
-        sessionCreateRef.current = null;
         sessionId = session.id;
         setActiveSessionId(session.id);
       }
@@ -273,6 +279,7 @@ export function ChatScreen() {
         at: new Date().toISOString(),
       };
       const afterUser = await storage.appendMessageToSession(sessionId, userMsg);
+      userSaved = true;
       if (afterUser) setMessages(afterUser.messages);
       const afterReply = await storage.appendMessageToSession(sessionId, replyMsg);
       if (afterReply) setMessages(afterReply.messages);
@@ -285,6 +292,13 @@ export function ChatScreen() {
       // The crisis modal is already up; don't stack an error alert on top
       // of it or put the crisis text back in the input.
       if (detectCrisis(text).level === 'hard') return;
+      if (userSaved) {
+        Alert.alert(
+          "Couldn't save Fernly's reply",
+          'Your message was saved. Send another message to keep going, and if it keeps failing, restart the app.',
+        );
+        return;
+      }
       setInput(draft);
       // Alert.alert is safe to use here — RN's Alert always renders on
       // both platforms; even if a render error boundary catches the
