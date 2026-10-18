@@ -9,11 +9,13 @@ import { Card, styles as cardStyles } from '../components/Card';
 import { colors, radius, space, type as t } from '../theme';
 import { storage } from '../storage';
 import { localDateString } from '../util/date';
+import { currentStreak, sessionsCompleted, totalMinutes } from '../util/progress';
 import type { MoodEntry } from '../types';
 
 export function InsightsScreen() {
   const nav = useNavigation<any>();
   const [moods, setMoods] = useState<MoodEntry[]>([]);
+  const [stats, setStats] = useState({ minutes: 0, sessions: 0, streak: 0 });
 
   // v0.9: re-read on every focus so the chart reflects MoodCheckIn
   // saves done in another tab without an app remount. See plans/05 P1-13.
@@ -24,6 +26,16 @@ export function InsightsScreen() {
           setMoods(await storage.getMoods());
         } catch {
           setMoods([]);
+        }
+        try {
+          const c = await storage.getCompletions();
+          setStats({
+            minutes: totalMinutes(c),
+            sessions: sessionsCompleted(c),
+            streak: currentStreak(c, new Date()),
+          });
+        } catch {
+          setStats({ minutes: 0, sessions: 0, streak: 0 });
         }
       })();
     }, []),
@@ -98,6 +110,20 @@ export function InsightsScreen() {
       <View style={styles.header}>
         <Text style={styles.eyebrow}>THIS WEEK</Text>
         <Text style={styles.h1}>Your week</Text>
+      </View>
+
+      <View style={styles.tiles}>
+        <StatTile
+          value={stats.minutes}
+          label="Minutes"
+          a11y={`${stats.minutes} minutes meditated`}
+        />
+        <StatTile
+          value={stats.sessions}
+          label="Sessions"
+          a11y={`${stats.sessions} sessions completed`}
+        />
+        <StatTile value={stats.streak} label="Day streak" a11y={`${stats.streak} day streak`} />
       </View>
 
       <Card>
@@ -234,7 +260,37 @@ export function InsightsScreen() {
   );
 }
 
+function StatTile({ value, label, a11y }: { value: number; label: string; a11y: string }) {
+  return (
+    <View style={styles.tile} accessible accessibilityLabel={a11y}>
+      <Text style={styles.tileValue}>{value}</Text>
+      <Text style={styles.tileLabel}>{label.toUpperCase()}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  tiles: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.s3,
+    paddingHorizontal: space.s6,
+    marginBottom: space.s4,
+  },
+  tile: {
+    flexGrow: 1,
+    flexBasis: 90,
+    backgroundColor: colors.paper2,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingVertical: space.s4,
+    paddingHorizontal: space.s3,
+    alignItems: 'center',
+  },
+  tileValue: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
+  tileLabel: { ...t.eyebrow, color: colors.textMuted, marginTop: 4, fontSize: 10 },
+
   header: { paddingHorizontal: space.s6, paddingTop: space.s7, paddingBottom: space.s5 },
   eyebrow: { ...t.eyebrow, color: colors.textMuted, marginBottom: 6 },
   h1: { ...t.displayLg, color: colors.text },

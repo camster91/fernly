@@ -233,7 +233,7 @@ export function SettingsScreen({ navigation }: Props) {
             onPress={exportData}
             accessibilityRole="button"
             accessibilityLabel="Export your data"
-            accessibilityHint="Shares a JSON dump of your profile, moods, and chats"
+            accessibilityHint="Shares a JSON dump of your profile and moods"
             style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
           >
             <Text style={styles.actionText}>Export your data</Text>

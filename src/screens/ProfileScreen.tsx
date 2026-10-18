@@ -110,7 +110,7 @@ export function ProfileScreen({ navigation }: Props) {
     // actually means. Plans/05-full-codebase-review-2026-07-22.md P1-8.
     Alert.alert(
       'Reset Fernly?',
-      'This clears your profile, mood entries, and chat history on this device. The crisis-pattern audit log (last 500 entries) is retained for safety review and is not user-editable. Cannot be undone.',
+      'This clears your profile, mood entries, and any older chat history on this device. The crisis-pattern audit log (last 500 entries) is retained for safety review and is not user-editable. Cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -154,6 +154,7 @@ export function ProfileScreen({ navigation }: Props) {
           {profile ? TONE_LABEL[profile.tone] : ''}
           {profile?.goals?.length ? ` · ${profile.goals.length} GOALS` : ''}
         </Text>
+        <Text style={styles.subline}>Free forever · no ads · no account</Text>
       </View>
 
       <View style={styles.statsRow}>
