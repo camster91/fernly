@@ -99,11 +99,19 @@ export function SettingsScreen({ navigation }: Props) {
       const chats = await storage.getAllChatSessions();
       const session = await storage.getActiveSessionId();
       const profile = await storage.getProfile();
+      const completions = await storage.getCompletions();
       // JSON export — the simplest portable format. Round-trip via
       // storage.import is out of v0 scope (import = a different
       // security audit, different risk model).
       const json = JSON.stringify(
-        { profile, moods, chats, activeSessionId: session, exportedAt: new Date().toISOString() },
+        {
+          profile,
+          moods,
+          chats,
+          completions,
+          activeSessionId: session,
+          exportedAt: new Date().toISOString(),
+        },
         null,
         2,
       );

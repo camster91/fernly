@@ -416,3 +416,58 @@ describe('getAllChatSessions when legacy migration fails', () => {
     expect(secureData.has(LEGACY_CHATS)).toBe(true);
   });
 });
+
+describe('session completions', () => {
+  const COMPLETIONS = '@fernly/session-completions';
+  const completion = (n: number) => ({
+    sessionId: `s${n}`,
+    completedAt: '2026-10-18T12:00:00.000Z',
+    seconds: n,
+  });
+
+  it('adds a completion and returns it newest first', async () => {
+    await storage.addCompletion(completion(1));
+    await storage.addCompletion(completion(2));
+    expect(await storage.getCompletions()).toEqual([completion(2), completion(1)]);
+    expect(asyncData.has(COMPLETIONS)).toBe(true);
+  });
+
+  it('caps at the newest 1,000 entries', async () => {
+    const seed = Array.from({ length: 1000 }, (_, i) => completion(i + 1));
+    asyncData.set(COMPLETIONS, JSON.stringify(seed));
+    await storage.addCompletion(completion(5000));
+    const all = await storage.getCompletions();
+    expect(all).toHaveLength(1000);
+    expect(all[0]).toEqual(completion(5000));
+    expect(all[999]).toEqual(completion(999));
+  });
+
+  it('returns [] when the stored JSON is not an array', async () => {
+    asyncData.set(COMPLETIONS, JSON.stringify({ not: 'an array' }));
+    expect(await storage.getCompletions()).toEqual([]);
+  });
+
+  it('drops malformed entries on read', async () => {
+    asyncData.set(
+      COMPLETIONS,
+      JSON.stringify([
+        completion(1),
+        null,
+        'x',
+        { sessionId: 1, completedAt: 'a', seconds: 1 },
+        { sessionId: 'a', completedAt: 2, seconds: 1 },
+        { sessionId: 'a', completedAt: 'a', seconds: -1 },
+        { sessionId: 'a', completedAt: 'a', seconds: '5' },
+        { sessionId: 'a', completedAt: 'a', seconds: null },
+      ]),
+    );
+    expect(await storage.getCompletions()).toEqual([completion(1)]);
+  });
+
+  it('clearAll removes completions', async () => {
+    await storage.addCompletion(completion(1));
+    await storage.clearAll();
+    expect(asyncData.has(COMPLETIONS)).toBe(false);
+    expect(await storage.getCompletions()).toEqual([]);
+  });
+});

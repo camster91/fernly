@@ -35,10 +35,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import type { UserProfile, MoodEntry, ChatSession, ChatMessage, CrisisAuditEntry } from './types';
+import type { SessionCompletion } from './util/progress';
 
 // ---- Constants ----
 const MAX_MESSAGES_PER_SESSION = 200;
 const MAX_CRISIS_AUDIT_ENTRIES = 500;
+const MAX_COMPLETIONS = 1000;
 
 // ---- Reset event bus ----
 // RootNav needs to re-read onboarded state after clearAll() because its
@@ -82,6 +84,9 @@ const ASYNC_KEYS = {
   // launch. Entries older than 6h are dropped on read; persistence is
   // best-effort (same swallow-on-error policy as the rest of AsyncStorage).
   verifiedUrls: '@fernly/verified-urls',
+  // Guided-session completions (newest first, capped at MAX_COMPLETIONS).
+  // Listed here so clearAll() wipes it on Reset.
+  completions: '@fernly/session-completions',
 } as const;
 
 // ---- SecureStore keys (encrypted, device-bound) ----
@@ -283,6 +288,27 @@ export const storage = {
     const all = await storage.getMoods();
     const filtered = all.filter((x) => x.date !== m.date);
     await asyncSet(ASYNC_KEYS.moods, [m, ...filtered]);
+  },
+
+  // --- Session completions (unencrypted AsyncStorage) ---
+  // Newest first. Non-array JSON reads as []; malformed entries are dropped.
+  async getCompletions(): Promise<SessionCompletion[]> {
+    const raw = await asyncGet<unknown>(ASYNC_KEYS.completions);
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (c): c is SessionCompletion =>
+        !!c &&
+        typeof c === 'object' &&
+        typeof (c as SessionCompletion).sessionId === 'string' &&
+        typeof (c as SessionCompletion).completedAt === 'string' &&
+        typeof (c as SessionCompletion).seconds === 'number' &&
+        Number.isFinite((c as SessionCompletion).seconds) &&
+        (c as SessionCompletion).seconds >= 0,
+    );
+  },
+  async addCompletion(c: SessionCompletion): Promise<void> {
+    const all = await storage.getCompletions();
+    await asyncSet(ASYNC_KEYS.completions, [c, ...all].slice(0, MAX_COMPLETIONS));
   },
 
   // --- Onboarding flag (unencrypted AsyncStorage) ---
