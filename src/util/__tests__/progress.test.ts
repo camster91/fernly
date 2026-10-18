@@ -59,7 +59,12 @@ describe('sessionsCompleted', () => {
 });
 
 describe('currentStreak', () => {
-  const today = new Date('2026-10-18T12:00:00');
+  // Built in beforeAll, not at collection time: the outer beforeAll pins
+  // TZ first, so this local-noon is the same instant in every host zone.
+  let today: Date;
+  beforeAll(() => {
+    today = new Date('2026-10-18T12:00:00');
+  });
 
   it('returns 0 for no completions', () => {
     expect(currentStreak([], today)).toBe(0);
@@ -106,6 +111,25 @@ describe('currentStreak', () => {
     const c = [
       completion('a', '2026-10-17T23:30:00', 60),
       completion('b', '2026-10-18T00:30:00', 60),
+    ];
+    expect(currentStreak(c, today)).toBe(2);
+  });
+
+  it('uses local days for toISOString()-style Z timestamps', () => {
+    // 2026-10-18T06:30Z is 23:30 PDT on Oct 17; 07:30Z is 00:30 PDT on Oct 18.
+    // Slicing the UTC string would file these under Oct 18 and Oct 18 (1 day).
+    const c = [
+      completion('a', '2026-10-18T06:30:00.000Z', 60),
+      completion('b', '2026-10-18T07:30:00.000Z', 60),
+    ];
+    expect(currentStreak(c, today)).toBe(2);
+  });
+
+  it('ignores an unparseable completedAt without crashing', () => {
+    const c = [
+      completion('a', '2026-10-18T09:00:00', 60),
+      completion('bad', 'not-a-date', 60),
+      completion('b', '2026-10-17T09:00:00', 60),
     ];
     expect(currentStreak(c, today)).toBe(2);
   });

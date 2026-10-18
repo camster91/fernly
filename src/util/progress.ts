@@ -32,7 +32,12 @@ export function sessionsCompleted(c: SessionCompletion[]): number {
  * streak is not broken until a full day passes without practice.
  */
 export function currentStreak(c: SessionCompletion[], today: Date): number {
-  const days = new Set(c.map((s) => localDateString(new Date(s.completedAt))));
+  const days = new Set<string>();
+  for (const s of c) {
+    const at = new Date(s.completedAt);
+    if (Number.isNaN(at.getTime())) continue; // skip unparseable timestamps
+    days.add(localDateString(at));
+  }
 
   const cursor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   if (!days.has(localDateString(cursor))) {
