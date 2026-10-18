@@ -1,8 +1,8 @@
 # Fernly
 
-> A wellness companion for Gen Z. Mobile-first, hybrid text + voice, mixed CBT/ACT. Soft pastel design system + a working v0 Expo app.
+> A free, offline guided-meditation app. Mobile-first Expo app with a soft pastel design system.
 
-**Status:** v0 alpha — built 2026-07-10 in one evening. Crisis detection shipped. Real LLM chat, voice, and App Store submission are next.
+**Status:** v0 alpha. Free forever, no ads, no account. Everything stays on your device.
 
 ---
 
@@ -35,24 +35,20 @@ npx expo start --ios
 
 ---
 
-## What's shipped (v0)
+## What's in the app
 
-- [x] **Onboarding** — 5 steps, real validation, persists profile
-- [x] **Today** — greeting, streak strip, 3 context cards
-- [x] **Mood check-in** — 6-emoji picker, quick-word tags, persisted to AsyncStorage
-- [x] **Chat** — empty state, deterministic tone-aware mock replies, mic button toggle
-- [x] **Practice** — 8 exercises listed, box breathing fully built (live 4-4-4-4 cycle)
-- [x] **Insights** — real SVG line chart from mood data, average stat
-- [x] **Profile** — mascot avatar, stats, 6 settings rows
-- [x] **Crisis detection** — keyword + soft-signal detector, always-wins modal, 18/18 unit cases pass
+- [x] **Onboarding** — 18+ confirmation, name, mood, goals, mascot
+- [x] **Meditate** — guided sessions with offline audio, today's session, and a Player
+- [x] **Mood check-ins** — 6-emoji picker and quick-word tags, saved on device
+- [x] **Exercises** — breathing and other short practices
+- [x] **Insights** — minutes meditated, sessions completed, day streak, and a weekly mood chart
+- [x] **Crisis helplines** — a help button on every tab, always one tap away
+- [x] **Everything on device** — no account, no ads, free forever
 
-## What's NOT shipped yet
+## Not yet
 
-- [ ] Real LLM chat (FastAPI + GPT-4o-mini) — currently deterministic mock
-- [ ] Voice mode (Hailuo STT → text → ElevenLabs TTS playback)
-- [ ] 7 of 8 exercises (only box breathing is built; others are stubs)
-- [ ] Auth (anyone with the URL can use the web build)
-- [ ] App Store submission (TestFlight alpha target: ~5 weeks from initial build)
+- [ ] Real narration (the shipped audio files are silent placeholders; see "Generating audio")
+- [ ] App Store submission
 
 ---
 
@@ -79,18 +75,16 @@ The fern frond SVG lives in `src/components/BrandMark.tsx`. **It's currently a p
 
 ## Safety
 
-Crisis detection runs on every user message before the LLM. If a hard pattern matches (e.g. "I want to kill myself", "don't want to be alive"), a modal appears with hotline resources and **the LLM never sees the message**. The detector is at `src/safety/crisis.ts` and has a soft-signal layer that logs patterns without blocking.
+Fernly is not a substitute for professional care. A help button on every tab opens a list of crisis helplines by country, always one tap away. The helpline data lives in `src/safety/crisis.ts`.
 
-The plan still flags a **clinical advisor** as the highest-risk deferred decision. Crisis detection is a real safety net but not a substitute for a licensed psychologist reviewing prompts.
+## Privacy & storage
 
-## Privacy & storage partition
+Fernly is free forever, with no ads and no account. There is no backend: everything is stored on your device.
 
-Fernly splits local data between two stores depending on sensitivity:
+- **AsyncStorage (unencrypted, OS-level):** profile, mood entries, onboarding complete flag, exercise sessions, and meditation completions.
+- **`expo-secure-store` (encrypted, device-unlock-gated):** the crisis-pattern audit log, which intentionally survives Profile → Reset. Any chat history left over from earlier versions also lives here and is deleted by Reset.
 
-- **AsyncStorage (unencrypted, OS-level):** profile, mood entries, onboarding complete flag, exercise sessions, active-chat-session UUID. These are useful across app reinstalls and don't carry crisis-flagged text.
-- **`expo-secure-store` (encrypted, device-unlock-gated):** chat history messages (which can include "kms" / "I want to die" / etc.). On iOS this is the Keychain; on Android it's the Keystore. The crisis-pattern audit log also lives here and intentionally survives Profile → Reset.
-
-**Web partition:** `expo-secure-store` on web falls back to `localStorage` with no OS-level encryption. The chat history is therefore plaintext on a web deploy — anyone with devtools access to that browser can read it. This is inherent to the browser sandbox; web is appropriate for self-hosted / preview deploys, not for storing private health data on a shared device. Mobile (iOS/Android) is the recommended surface for production use.
+**Web:** `expo-secure-store` on web falls back to `localStorage` with no OS-level encryption. Web is appropriate for self-hosted / preview deploys, not for storing private data on a shared device.
 
 ---
 

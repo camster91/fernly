@@ -34,7 +34,7 @@ And release. Let everything drop.
 
 [pause 15s]
 
-Now let your breathing slow. Breathe in for a count of four, and out for a count of six. A longer breath out helps your body settle. In, two, three, four. Out, two, three, four, five, six.
+Now let your breathing slow. Breathe in for a count of four, and out for a count of six. A longer breath out can help your body settle. In, two, three, four. Out, two, three, four, five, six.
 
 [pause 60s]
 

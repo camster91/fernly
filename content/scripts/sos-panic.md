@@ -1,4 +1,4 @@
-You're okay. This feeling is strong, but it will pass. Let's slow down together.
+You're okay. This feeling is strong, but it can pass. Let's slow down together.
 
 [pause 4s]
 

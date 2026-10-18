@@ -18,7 +18,7 @@ Follow one full breath, from the very beginning to the very end. Then another. J
 
 [pause 20s]
 
-At some point your mind will pull away, to a task, a message, a worry. Notice that gently, and bring your attention back to the next breath. Each time you return, you're strengthening your focus, like a muscle.
+At some point your mind will pull away, to a task, a message, a worry. Notice that gently, and bring your attention back to the next breath. Each time you return, you're practising focus, a little at a time.
 
 [pause 15s]
 

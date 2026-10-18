@@ -2,7 +2,7 @@
 
 ## About this app
 
-Fernly is a wellness companion for Gen Z — a hybrid text + voice app built on Expo SDK 57 (React Native). It handles sensitive content: mood logs, chat conversations, and a crisis-pattern detector that surfaces safety resources when users type indicators of self-harm.
+Fernly is a free, offline guided-meditation app built on Expo SDK 57 (React Native). It handles sensitive content: mood logs, meditation history, and crisis helpline resources. Everything is stored on the device.
 
 Because we process crisis-flagged text, **security reports get routed straight to a human, never auto-triaged.** A missed report is worse than a slow response.
 
@@ -44,7 +44,6 @@ This is a v0 alpha. We ship weekly; every release on `main` is the supported ver
 - Crisis-pattern audit log persistence or access
 - Any path that lets an attacker read or write another user's data
 - Authentication, authorization, or session-handling flaws
-- Injection or RCE in the chat pipeline
 
 ## Out-of-scope (still welcome, but lower priority)
 
@@ -52,7 +51,7 @@ This is a v0 alpha. We ship weekly; every release on `main` is the supported ver
 
 ## Cryptographic notes
 
-- Chat history is stored in `expo-secure-store` (iOS: Keychain, Android: Keystore).
+- Any old chat history from earlier versions is stored in `expo-secure-store` (iOS: Keychain, Android: Keystore) and is still deleted by Profile → Reset if present.
 - Mood entries and profile data are stored in `AsyncStorage` (unencrypted).
 - The crisis-pattern audit log lives in SecureStore and is encrypted at rest by the OS.
 - No backend = no transport encryption concern in v0.
