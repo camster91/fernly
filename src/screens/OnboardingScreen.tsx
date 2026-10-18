@@ -122,7 +122,7 @@ export function OnboardingScreen({ onDone }: Props) {
   };
 
   return (
-    <ScreenContainer scroll={false}>
+    <ScreenContainer scroll={false} showHelp={false}>
       <View style={styles.dots} accessible={false} accessibilityElementsHidden>
         {Array.from({ length: total }).map((_, i) => (
           <View

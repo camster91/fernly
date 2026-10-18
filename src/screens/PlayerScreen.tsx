@@ -26,7 +26,7 @@ export function PlayerScreen() {
 
   if (!session || source === undefined) {
     return (
-      <ScreenContainer>
+      <ScreenContainer showHelp={false}>
         <View style={styles.missing}>
           <Text style={styles.title}>Session not available</Text>
           <Text style={styles.blurb}>
@@ -112,7 +112,7 @@ function PlayerBody({ session, source }: { session: SessionDef; source: number }
   const remaining = Math.max(0, duration - position);
 
   return (
-    <ScreenContainer>
+    <ScreenContainer showHelp={false}>
       <View style={styles.wrap}>
         <Pressable
           onPress={() => navigation.goBack()}

@@ -136,7 +136,7 @@ export function SettingsScreen({ navigation }: Props) {
   }, []);
 
   return (
-    <ScreenContainer scroll>
+    <ScreenContainer scroll showHelp={false}>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 100 }}
