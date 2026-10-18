@@ -123,7 +123,7 @@ export function SettingsScreen({ navigation }: Props) {
   const showLegal = useCallback(() => {
     Alert.alert(
       'Fernly — legal & safety',
-      'Fernly is not therapy. If you are in crisis, contact 988 (US) or 116 123 (UK).\n\nFull Disclaimer, Privacy Policy, and EULA ship in a future update. Open-source decision is on the roadmap.\n\nNote: your local chat history, mood entries, and profile are deleted by Reset. The crisis-pattern audit log (last 500 entries) is retained for safety review and is not user-editable.',
+      'Fernly is not therapy. If you are in crisis, contact 988 (US) or 116 123 (UK).\n\nFull Disclaimer, Privacy Policy, and EULA ship in a future update. Open-source decision is on the roadmap.\n\nNote: your local mood entries, profile, and any older saved conversations are deleted by Reset. The crisis-pattern audit log (last 500 entries) is retained for safety review and is not user-editable.',
     );
   }, []);
 

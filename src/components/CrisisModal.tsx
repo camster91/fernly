@@ -30,14 +30,6 @@ interface Props {
   visible: boolean;
   /** Optional override. When omitted, derived from device locale via expo-localization. */
   locale?: string;
-  /**
-   * @deprecated v0.7: no longer rendered. Surfacing the user's matched
-   * crisis phrasing back at them was a clinical-UX re-traumatization
-   * risk and a screen-reader pitfall (see PR3 P0 #8). Kept in the
-   * Props type to avoid breaking the ChatScreen call site; will be
-   * removed in v1.
-   */
-  matchedPhrase?: string;
   onDismiss: () => void;
 }
 
@@ -71,7 +63,7 @@ const MEMOIZED_PICKED_LOCALE = (() => {
 })();
 const pickLocale = () => MEMOIZED_PICKED_LOCALE;
 
-export function CrisisModal({ visible, locale, matchedPhrase: _matchedPhrase, onDismiss }: Props) {
+export function CrisisModal({ visible, locale, onDismiss }: Props) {
   // If the caller didn't pass a locale, derive from the device prefs.
   // Pinned at mount — we don't re-render on OS locale changes mid-modal.
   const effectiveLocale = locale ?? pickLocale();

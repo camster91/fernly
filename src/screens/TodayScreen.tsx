@@ -232,16 +232,6 @@ export function TodayScreen() {
         <Text style={cardStyles.title}>Box breathing</Text>
         <Text style={cardStyles.sub}>4 minutes. Calms your nervous system fast.</Text>
       </Card>
-
-      <Card
-        onPress={() => nav.navigate('Tabs', { screen: 'Chat' })}
-        accessibilityLabel="Open Fernly chat"
-        accessibilityHint="Opens a conversation with your mascot"
-      >
-        <Text style={cardStyles.eyebrow}>TALK IT OUT</Text>
-        <Text style={cardStyles.title}>Open Fernly</Text>
-        <Text style={cardStyles.sub}>A small conversation about whatever's here.</Text>
-      </Card>
     </ScreenContainer>
   );
 }

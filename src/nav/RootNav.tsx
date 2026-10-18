@@ -1,7 +1,7 @@
 // Root navigation
 // Two layers:
 //   1. Onboarding gate — shows Onboarding until profile.onboarded = true
-//   2. Bottom tab navigator — Today / Chat / Practice / Insights / You
+//   2. Bottom tab navigator — Today / Practice / Insights / You
 // Plus a native stack inside for modal flows (MoodCheckIn, Exercise, Settings).
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
@@ -10,7 +10,6 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TodayScreen } from '../screens/TodayScreen';
-import { ChatScreen } from '../screens/ChatScreen';
 import { PracticeScreen } from '../screens/PracticeScreen';
 import { ExerciseScreen } from '../screens/ExerciseScreen';
 import { InsightsScreen } from '../screens/InsightsScreen';
@@ -25,7 +24,6 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 
 export type TabParamList = {
   Today: undefined;
-  Chat: undefined;
   Practice: undefined;
   Insights: undefined;
   You: undefined;
@@ -70,17 +68,9 @@ function Tabs() {
         options={{
           tabBarIcon: ({ focused }) => <TabIcon glyph="✿" focused={focused} />,
           // v0.7: VoiceOver/TalkBack previously announced the emoji glyph
-          // ("cherry blossom") instead of "Today, tab 1 of 5". Explicit
+          // ("cherry blossom") instead of "Today, tab 1 of 4". Explicit
           // labels fix the disambiguation.
-          tabBarAccessibilityLabel: 'Today, tab 1 of 5',
-        }}
-      />
-      <Tab.Screen
-        name="Chat"
-        component={ChatScreen}
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon glyph="💬" focused={focused} />,
-          tabBarAccessibilityLabel: 'Chat, tab 2 of 5',
+          tabBarAccessibilityLabel: 'Today, tab 1 of 4',
         }}
       />
       <Tab.Screen
@@ -88,7 +78,7 @@ function Tabs() {
         component={PracticeScreen}
         options={{
           tabBarIcon: ({ focused }) => <TabIcon glyph="🧘" focused={focused} />,
-          tabBarAccessibilityLabel: 'Practice, tab 3 of 5',
+          tabBarAccessibilityLabel: 'Practice, tab 2 of 4',
         }}
       />
       <Tab.Screen
@@ -96,7 +86,7 @@ function Tabs() {
         component={InsightsScreen}
         options={{
           tabBarIcon: ({ focused }) => <TabIcon glyph="📊" focused={focused} />,
-          tabBarAccessibilityLabel: 'Insights, tab 4 of 5',
+          tabBarAccessibilityLabel: 'Insights, tab 3 of 4',
         }}
       />
       <Tab.Screen
@@ -104,7 +94,7 @@ function Tabs() {
         component={ProfileScreen}
         options={{
           tabBarIcon: ({ focused }) => <TabIcon glyph="👤" focused={focused} />,
-          tabBarAccessibilityLabel: 'Profile, tab 5 of 5',
+          tabBarAccessibilityLabel: 'Profile, tab 4 of 4',
         }}
       />
     </Tab.Navigator>

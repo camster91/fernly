@@ -48,9 +48,7 @@ This is a v0 alpha. We ship weekly; every release on `main` is the supported ver
 
 ## Out-of-scope (still welcome, but lower priority)
 
-- The mock LLM reply (`mockReply()` in `src/screens/ChatScreen.tsx`) is intentionally deterministic before the real LLM ships; treat it as test-only.
 - Denials of service that require the attacker to be the user themselves (a user can't DOS their own app meaningfully).
-- Rate-limit bypasses before the real LLM ships (currently no server-side endpoint).
 
 ## Cryptographic notes
 

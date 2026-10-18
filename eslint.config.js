@@ -76,15 +76,6 @@ module.exports = [
     },
   },
 
-  // ChatScreen.tsx uses a deterministic char-code hash for the v0 mock
-  // responder — the `|` is intentional and not a real bug.
-  {
-    files: ['src/screens/ChatScreen.tsx'],
-    rules: {
-      'no-bitwise': 'off',
-    },
-  },
-
   // Inline styles are fine in RN — this is a stylistic preference, not
   // a bug. Keep the warning off until a real reviewer pushes for it.
   {

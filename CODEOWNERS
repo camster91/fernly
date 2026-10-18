@@ -62,7 +62,6 @@
 # — Screens where copy decisions live with the owner, but
 #   single-line code changes don't need review. —
 
-/src/screens/ChatScreen.tsx                    @camster91
 /src/screens/TodayScreen.tsx                   @camster91
 /src/screens/MoodCheckInScreen.tsx             @camster91
 /src/screens/PracticeScreen.tsx                @camster91

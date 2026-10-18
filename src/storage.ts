@@ -352,8 +352,8 @@ export const storage = {
   // sessions — every other write path delegates here so the index
   // stays in sync.
   //
-  // Strict write: a failed keychain write rejects, so ChatScreen keeps the
-  // user's draft and tells them, instead of the message silently vanishing.
+  // Strict write: a failed keychain write rejects, so callers see the
+  // failure instead of the write silently vanishing.
   async setChatSession(session: ChatSession): Promise<void> {
     const next = { ...session, version: CURRENT_CHAT_VERSION };
     await secureSetStrict(sessionKey(session.id), next);
