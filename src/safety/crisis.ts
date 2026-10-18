@@ -33,6 +33,10 @@ function normalize(input: string): string {
   //    These are common in bypass attempts: "k\u200b i\u200b l\u200b l"
   s = s.replace(/[\u200B-\u200D\uFEFF\u2060]/g, '');
 
+  // 1b. Curly apostrophes → straight. iOS keyboards type ’ by default, and
+  //     several patterns spell "don't" with a plain apostrophe.
+  s = s.replace(/[\u2018\u2019\u02BC]/g, "'");
+
   // 2. v0.9 (F-P1-2): collapse separators between single letters.
   //    Catches "k.m.s" → "kms", "k-m-s" → "kms", "k/m/s" → "kms",
   //    "k s" — but also less-obvious separators popular in bypass
@@ -93,7 +97,8 @@ const HARD_PATTERNS: RegExp[] = [
   // space). The space is still optional in case normalization strips more
   // than expected.
   /\b(kill|end|take)[\s-]*(my[\s-]*self|my[\s-]*life|it[\s-]*all|myself)\b/i,
-  /\b(want|wanted|wanna|planning|plan)[\s-]+to[\s-]+(die|kill[\s-]+(my[\s-]*self|myself))\b/i,
+  // "wanna" already means "want to", so it doesn't take a following "to".
+  /\b(?:(?:want|wanted|planning|plan)[\s-]+to|wanna)[\s-]+(die|kill[\s-]+(my[\s-]*self|myself))\b/i,
   /\bsuicid(e|al)\b/i,
   /\boverdose\b/i,
   /\bcut\s+(my\s*self|myself)\b/i,
@@ -235,19 +240,25 @@ const CONTEXT_OVERRIDES: RegExp[] = [
   /\bso\s+(glad|happy|grateful|thankful)\s+(i'm|i\s+am|to\s+be)\s+(still\s+)?alive\b/i,
 ];
 
+const CONTEXT_OVERRIDES_GLOBAL = CONTEXT_OVERRIDES.map(
+  (re) => new RegExp(re.source, `${re.flags}g`),
+);
+
 export function detectCrisis(input: string): CrisisVerdict {
   const text = input.trim();
   if (!text) return { level: 'none' };
 
-  // 0. Normalize — strip ZWJs, collapse letter-spaced runs, leetspeak.
-  const normalized = normalize(text);
-
-  // 1. False-positive guard — test against the ORIGINAL text so idioms
-  //    like "I'm dying of laughter" survive normalization. If a benign
-  //    idiom matches, bail early.
-  for (const re of CONTEXT_OVERRIDES) {
-    if (re.test(text)) return { level: 'none' };
+  // 1. False-positive guard — blank out benign idioms in the ORIGINAL text
+  //    so they survive normalization. We remove only the idiom itself, never
+  //    bail early: "I killed it at work but I want to kill myself" must still
+  //    reach the hard patterns below.
+  let scrubbed = text;
+  for (const re of CONTEXT_OVERRIDES_GLOBAL) {
+    scrubbed = scrubbed.replace(re, ' ');
   }
+
+  // 0. Normalize — strip ZWJs, collapse letter-spaced runs, leetspeak.
+  const normalized = normalize(scrubbed);
 
   // 2. Hard patterns — tested against the normalized form
   for (const re of HARD_PATTERNS) {
@@ -360,73 +371,63 @@ export async function verifyResourceReachability(
   );
 }
 
+const IASP: CrisisResource = {
+  name: 'Find a helpline (IASP directory)',
+  url: 'https://iasp.info/resources/Crisis_Centres/',
+};
+const FIND_A_HELPLINE: CrisisResource = {
+  name: 'Find a helpline worldwide',
+  url: 'https://findahelpline.com',
+};
+
+// Country-specific lines, keyed by ISO 3166 region. A region we don't list
+// gets the directories only — never another country's number (es-AR used to
+// get Mexico's line, fr-CA got France's).
+const BY_REGION: Record<string, CrisisResource[]> = {
+  US: [
+    { name: '988 Suicide & Crisis Lifeline (US)', phone: '988' },
+    { name: 'Crisis Text Line (US)', text: 'HOME to 741741' },
+  ],
+  CA: [{ name: '988 Suicide Crisis Helpline (Canada)', phone: '988' }],
+  GB: [{ name: 'Samaritans (UK)', phone: '116 123' }],
+  IE: [{ name: 'Samaritans (Ireland)', phone: '116 123' }],
+  AU: [{ name: 'Lifeline (Australia)', phone: '13 11 14' }],
+  NZ: [{ name: 'Need to talk? (New Zealand)', phone: '1737' }],
+  MX: [{ name: 'Línea de la Vida (México)', phone: '800 911 2000' }],
+  ES: [
+    { name: '024 — Línea de atención a la conducta suicida (España)', phone: '024' },
+    { name: 'Teléfono de la Esperanza (España)', phone: '717 003 717' },
+  ],
+  FR: [{ name: '3114 — Prévention du suicide (France)', phone: '3114' }],
+  BR: [{ name: 'Centro de Valorização da Vida (Brasil)', phone: '188' }],
+  DE: [{ name: 'Telefonseelsorge (Deutschland)', phone: '0800 111 0 111' }],
+  AT: [{ name: 'Telefonseelsorge (Österreich)', phone: '142' }],
+  CH: [{ name: 'Die Dargebotene Hand / La Main Tendue (Schweiz)', phone: '143' }],
+};
+
+// Used only when the locale has no region at all (e.g. bare "es").
+const DEFAULT_REGION_FOR_LANGUAGE: Record<string, string> = {
+  en: 'US',
+  es: 'MX',
+  fr: 'FR',
+  pt: 'BR',
+  de: 'DE',
+};
+
+function parseLocale(locale: string): { language: string; region?: string } {
+  const parts = locale.replace(/_/g, '-').split('-');
+  const language = (parts[0] ?? '').toLowerCase();
+  // Region is the 2-letter subtag after the language (skips scripts like "Hant").
+  const region = parts.slice(1).find((p) => /^[A-Za-z]{2}$/.test(p));
+  return { language, region: region?.toUpperCase() };
+}
+
 export function crisisResourcesFor(locale: string = 'en-US'): CrisisResource[] {
-  if (locale.startsWith('en-US') || locale === 'en') {
-    return [
-      { name: '988 Suicide & Crisis Lifeline (US)', phone: '988' },
-      { name: 'Crisis Text Line (US)', text: 'HOME to 741741' },
-      { name: 'Find a helpline worldwide', url: 'https://findahelpline.com' },
-      {
-        name: 'Find a helpline (IASP directory)',
-        url: 'https://iasp.info/resources/Crisis_Centres/',
-      },
-    ];
-  }
-  if (locale.startsWith('en-GB')) {
-    return [
-      { name: 'Samaritans (UK)', phone: '116 123' },
-      {
-        name: 'Find a helpline (IASP directory)',
-        url: 'https://iasp.info/resources/Crisis_Centres/',
-      },
-      { name: 'Find a helpline worldwide', url: 'https://findahelpline.com' },
-    ];
-  }
-  if (locale.startsWith('es')) {
-    // Mexico + Spain + Latin America — generic Spanish helplines
-    return [
-      { name: 'Línea de la Vida (México)', phone: '800 911 2000' },
-      { name: 'Teléfono de la Esperanza (España)', phone: '717 003 717' },
-      {
-        name: 'Find a helpline (IASP directory)',
-        url: 'https://iasp.info/resources/Crisis_Centres/',
-      },
-    ];
-  }
-  if (locale.startsWith('fr')) {
-    return [
-      { name: '3114 — Prévention du suicide (France)', phone: '3114' },
-      {
-        name: 'Find a helpline (IASP directory)',
-        url: 'https://iasp.info/resources/Crisis_Centres/',
-      },
-    ];
-  }
-  if (locale.startsWith('pt')) {
-    return [
-      { name: 'Centro de Valorização da Vida (Brasil)', phone: '188' },
-      {
-        name: 'Find a helpline (IASP directory)',
-        url: 'https://iasp.info/resources/Crisis_Centres/',
-      },
-    ];
-  }
-  if (locale.startsWith('de')) {
-    return [
-      { name: 'Telefonseelsorge (Deutschland)', phone: '0800 111 0 111' },
-      {
-        name: 'Find a helpline (IASP directory)',
-        url: 'https://iasp.info/resources/Crisis_Centres/',
-      },
-    ];
-  }
+  const { language, region } = parseLocale(locale);
+  const key = region ?? DEFAULT_REGION_FOR_LANGUAGE[language];
+  const local = key ? BY_REGION[key] : undefined;
+  if (local) return [...local, IASP, FIND_A_HELPLINE];
   // Fallback for any other locale — IASP directory first because it
   // localizes by country, plus findahelpline as a second fallback.
-  return [
-    {
-      name: 'Find a helpline (IASP directory)',
-      url: 'https://iasp.info/resources/Crisis_Centres/',
-    },
-    { name: 'Find a helpline worldwide', url: 'https://findahelpline.com' },
-  ];
+  return [IASP, FIND_A_HELPLINE];
 }

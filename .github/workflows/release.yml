@@ -4,17 +4,30 @@ on:
     tags:
       - 'v*.*.*'
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to release (e.g. 0.9.0)'
-        required: true
 permissions:
-  contents: write
+  contents: read
 jobs:
+  # Same gates as CI. A release never ships code that fails them.
+  quality:
+    name: Typecheck · Lint · Format · Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run ci
+
   build:
     name: EAS Build + Submit
+    needs: quality
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,44 +36,38 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
-      # Pin EAS CLI version — same version as the local dev toolchain
-      # to avoid "works on my machine" surprises.
+      - name: Check audio is not placeholder
+        run: npx tsx scripts/check-audio.ts
       - name: Install EAS CLI
-        run: npm install -g eas-cli@^13
-      # Expo Application Services (EAS) build + TestFlight submit.
-      # `eas submit --latest --platform ios` uploads the latest iOS
-      # build to TestFlight. `--auto-submit` with `appleIdAppIdentifier`
-      # in eas.json + App Store Connect API key in secrets handles the
-      # final review submission.
-      - name: Build for iOS (TestFlight)
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npm install -g eas-cli@^25
+      - name: Check eas.json is filled in
         run: |
-          eas build --platform ios --non-interactive --no-wait
+          if grep -q 'REPLACE_WITH_' eas.json; then
+            echo "::error::Set submit.production.ios.ascAppId in eas.json (see RELEASING.md)."
+            exit 1
+          fi
+      # `eas build` waits for the build to finish. We submit by build ID, not
+      # --latest, so an overlapping run can't make us submit someone else's build.
+      - name: Build iOS
+        id: ios
+        run: |
+          eas build --platform ios --profile production --non-interactive --json > ios-build.json
+          echo "build_id=$(jq -r '.[0].id' ios-build.json)" >> "$GITHUB_OUTPUT"
+      # Uses the App Store Connect API key stored on EAS via
+      # `eas credentials --platform ios` (one-time setup, see RELEASING.md).
       - name: Submit iOS to TestFlight
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas submit --platform ios --profile production --id "${{ steps.ios.outputs.build_id }}" --non-interactive
+      - name: Build Android
+        id: android
         run: |
-          # Wait for the build to complete, then submit. The exact
-          # pattern depends on the build profile in eas.json.
-          eas submit --platform ios --latest --auto-submit
-      - name: Build for Android (Internal track)
+          eas build --platform android --profile production --non-interactive --json > android-build.json
+          echo "build_id=$(jq -r '.[0].id' android-build.json)" >> "$GITHUB_OUTPUT"
+      - name: Write Play service account key
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas build --platform android --non-interactive --no-wait
-      - name: Submit Android to Play Internal
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-        run: eas submit --platform android --latest --track internal
-      # Optional: bump version on `main` after a successful release.
-      # Convention: tag v0.9.0 → version bumps to 0.10.0 on main.
-      - name: Bump version on main
-        if: success()
-        run: |
-          NEW_VERSION=$(./scripts/next-version.sh "${{ github.ref_name }}")
-          ./scripts/bump-version.sh "$NEW_VERSION"
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git commit -am "chore(release): bump to v$NEW_VERSION [skip ci]"
-          git push origin main
+        run: printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" > google-play-service-account.json
+      - name: Submit Android to Play Internal
+        run: eas submit --platform android --profile production --id "${{ steps.android.outputs.build_id }}" --non-interactive
+      - name: Remove Play service account key
+        if: always()
+        run: rm -f google-play-service-account.json

@@ -1,7 +1,7 @@
 // Root navigation
 // Two layers:
 //   1. Onboarding gate — shows Onboarding until profile.onboarded = true
-//   2. Bottom tab navigator — Today / Chat / Practice / Insights / You
+//   2. Bottom tab navigator — Today / Meditate / Practice / Insights / You
 // Plus a native stack inside for modal flows (MoodCheckIn, Exercise, Settings).
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
@@ -10,7 +10,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TodayScreen } from '../screens/TodayScreen';
-import { ChatScreen } from '../screens/ChatScreen';
+import { MeditateScreen } from '../screens/MeditateScreen';
 import { PracticeScreen } from '../screens/PracticeScreen';
 import { ExerciseScreen } from '../screens/ExerciseScreen';
 import { InsightsScreen } from '../screens/InsightsScreen';
@@ -18,6 +18,7 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { MoodCheckInScreen } from '../screens/MoodCheckInScreen';
+import { PlayerScreen } from '../screens/PlayerScreen';
 import { colors, type as t } from '../theme';
 import { storage, onStorageReset } from '../storage';
 
@@ -25,7 +26,7 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 
 export type TabParamList = {
   Today: undefined;
-  Chat: undefined;
+  Meditate: undefined;
   Practice: undefined;
   Insights: undefined;
   You: undefined;
@@ -35,6 +36,7 @@ export type RootStackParamList = {
   Tabs: NavigatorScreenParams<TabParamList>;
   MoodCheckIn: undefined;
   Exercise: { exerciseId: string };
+  Player: { sessionId: string };
   // Settings is reserved for a future in-app settings screen (privacy,
   // data controls, tone change). Today the ProfileScreen "Legal & safety"
   // row shows an Alert.alert placeholder; the route type is forward-
@@ -76,11 +78,11 @@ function Tabs() {
         }}
       />
       <Tab.Screen
-        name="Chat"
-        component={ChatScreen}
+        name="Meditate"
+        component={MeditateScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon glyph="💬" focused={focused} />,
-          tabBarAccessibilityLabel: 'Chat, tab 2 of 5',
+          tabBarIcon: ({ focused }) => <TabIcon glyph="🎧" focused={focused} />,
+          tabBarAccessibilityLabel: 'Meditate, tab 2 of 5',
         }}
       />
       <Tab.Screen
@@ -190,6 +192,7 @@ export function RootNav() {
               options={{ presentation: 'modal' }}
             />
             <Stack.Screen name="Exercise" component={ExerciseScreen} />
+            <Stack.Screen name="Player" component={PlayerScreen} />
             {/* v0.9: real Settings screen — replaces the Alert.alert
                 placeholders that ProfileScreen was triggering for
                 "Export your data" / "Legal & safety" / etc. */}

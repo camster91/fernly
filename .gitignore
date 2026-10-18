@@ -40,3 +40,7 @@ yarn-error.*
 /ios
 /android
 .hermes/
+
+# Release credentials written by CI
+google-play-service-account.json
+.superpowers/

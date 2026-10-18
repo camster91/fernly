@@ -9,6 +9,7 @@ import { Card, styles as cardStyles } from '../components/Card';
 import { moodLabel } from '../components/MoodPicker';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
+import { durationLabel, pickTodaySession } from '../data/sessions';
 import { localDateString } from '../util/date';
 import type { UserProfile, MoodEntry } from '../types';
 import type { RootStackParamList } from '../nav/RootNav';
@@ -106,6 +107,7 @@ export function TodayScreen() {
   );
 
   const hour = new Date().getHours();
+  const todaySession = pickTodaySession(new Date());
   const name = profile?.name || 'there';
   const firstName = name.split(' ')[0];
 
@@ -223,6 +225,19 @@ export function TodayScreen() {
       </Card>
 
       <Card
+        variant="mint"
+        onPress={() => nav.navigate('Player', { sessionId: todaySession.id })}
+        accessibilityLabel={`Today's session: ${todaySession.title}, ${Math.max(1, Math.round(todaySession.durationSec / 60))} minutes`}
+        accessibilityHint="Opens the player"
+      >
+        <Text style={cardStyles.eyebrow}>
+          TODAY'S SESSION · {durationLabel(todaySession.durationSec)}
+        </Text>
+        <Text style={cardStyles.title}>{todaySession.title}</Text>
+        <Text style={cardStyles.sub}>{todaySession.blurb}</Text>
+      </Card>
+
+      <Card
         variant="peach"
         onPress={() => nav.navigate('Exercise', { exerciseId: 'box-breathing' })}
         accessibilityLabel="Today's practice: Box breathing, 4 minutes"
@@ -230,17 +245,7 @@ export function TodayScreen() {
       >
         <Text style={cardStyles.eyebrow}>TODAY'S PRACTICE</Text>
         <Text style={cardStyles.title}>Box breathing</Text>
-        <Text style={cardStyles.sub}>4 minutes. Calms your nervous system fast.</Text>
-      </Card>
-
-      <Card
-        onPress={() => nav.navigate('Tabs', { screen: 'Chat' })}
-        accessibilityLabel="Open Fernly chat"
-        accessibilityHint="Opens a conversation with your mascot"
-      >
-        <Text style={cardStyles.eyebrow}>TALK IT OUT</Text>
-        <Text style={cardStyles.title}>Open Fernly</Text>
-        <Text style={cardStyles.sub}>A small conversation about whatever's here.</Text>
+        <Text style={cardStyles.sub}>4 minutes. A quick reset when things feel like a lot.</Text>
       </Card>
     </ScreenContainer>
   );

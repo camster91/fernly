@@ -35,10 +35,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import type { UserProfile, MoodEntry, ChatSession, ChatMessage, CrisisAuditEntry } from './types';
+import type { SessionCompletion } from './util/progress';
 
 // ---- Constants ----
 const MAX_MESSAGES_PER_SESSION = 200;
 const MAX_CRISIS_AUDIT_ENTRIES = 500;
+const MAX_COMPLETIONS = 1000;
 
 // ---- Reset event bus ----
 // RootNav needs to re-read onboarded state after clearAll() because its
@@ -82,6 +84,9 @@ const ASYNC_KEYS = {
   // launch. Entries older than 6h are dropped on read; persistence is
   // best-effort (same swallow-on-error policy as the rest of AsyncStorage).
   verifiedUrls: '@fernly/verified-urls',
+  // Guided-session completions (newest first, capped at MAX_COMPLETIONS).
+  // Listed here so clearAll() wipes it on Reset.
+  completions: '@fernly/session-completions',
 } as const;
 
 // ---- SecureStore keys (encrypted, device-bound) ----
@@ -193,15 +198,13 @@ async function secureSet(key: string, value: unknown): Promise<void> {
   try {
     await SecureStore.setItemAsync(key, JSON.stringify(value), SECURE_OPTIONS);
   } catch {
-    // Swallow per-write errors. Chat-write paths (setChatSession,
-    // appendMessageToSession) are best-effort: a failed write loses the
-    // in-flight message but the next send retries. Audit-log writes
-    // (appendCrisisAudit) are fire-and-forget by design.
+    // Swallow per-write errors. Audit-log writes (appendCrisisAudit) are
+    // fire-and-forget by design.
     //
     // Callers that need to detect a failed write should use
-    // secureSetStrict below. Today that's only getChats() legacy
-    // migration, which must not delete the legacy blob until every
-    // per-session key actually exists.
+    // secureSetStrict below: setChatSession (so a lost message is
+    // reported) and the getChats() legacy migration (which must not
+    // delete the legacy blob until every per-session key exists).
   }
 }
 
@@ -287,6 +290,27 @@ export const storage = {
     await asyncSet(ASYNC_KEYS.moods, [m, ...filtered]);
   },
 
+  // --- Session completions (unencrypted AsyncStorage) ---
+  // Newest first. Non-array JSON reads as []; malformed entries are dropped.
+  async getCompletions(): Promise<SessionCompletion[]> {
+    const raw = await asyncGet<unknown>(ASYNC_KEYS.completions);
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (c): c is SessionCompletion =>
+        !!c &&
+        typeof c === 'object' &&
+        typeof (c as SessionCompletion).sessionId === 'string' &&
+        typeof (c as SessionCompletion).completedAt === 'string' &&
+        typeof (c as SessionCompletion).seconds === 'number' &&
+        Number.isFinite((c as SessionCompletion).seconds) &&
+        (c as SessionCompletion).seconds >= 0,
+    );
+  },
+  async addCompletion(c: SessionCompletion): Promise<void> {
+    const all = await storage.getCompletions();
+    await asyncSet(ASYNC_KEYS.completions, [c, ...all].slice(0, MAX_COMPLETIONS));
+  },
+
   // --- Onboarding flag (unencrypted AsyncStorage) ---
   async getOnboarded(): Promise<boolean> {
     return (await AsyncStorage.getItem(ASYNC_KEYS.onboarding)) === 'true';
@@ -353,9 +377,12 @@ export const storage = {
   // in the reset index. This is the SINGLE funnel for writing chat
   // sessions — every other write path delegates here so the index
   // stays in sync.
+  //
+  // Strict write: a failed keychain write rejects, so callers see the
+  // failure instead of the write silently vanishing.
   async setChatSession(session: ChatSession): Promise<void> {
     const next = { ...session, version: CURRENT_CHAT_VERSION };
-    await secureSet(sessionKey(session.id), next);
+    await secureSetStrict(sessionKey(session.id), next);
     await addToSessionIndex(sessionKey(session.id));
   },
 
@@ -439,6 +466,26 @@ export const storage = {
     return [];
   },
 
+  // Every chat session on this install: runs the legacy migration, then
+  // reads each key in the session index. Used by data export and the
+  // profile stats counter (getChats() alone returns [] after migration).
+  //
+  // If the legacy migration fails, getChats() still returns the legacy
+  // sessions (the blob is kept) but they aren't indexed yet, so merge them in.
+  async getAllChatSessions(): Promise<ChatSession[]> {
+    const legacy = await storage.getChats();
+    const keys = await readSessionIndex();
+    const indexed = await Promise.all(
+      keys
+        .filter((k) => k.startsWith(SESSION_KEY_PREFIX))
+        .map((k) => storage.getChatSession(k.slice(SESSION_KEY_PREFIX.length))),
+    );
+    const byId = new Map<string, ChatSession>();
+    for (const s of legacy) byId.set(s.id, s);
+    for (const s of indexed) if (s) byId.set(s.id, s);
+    return [...byId.values()];
+  },
+
   // Legacy single-blob addChat: re-implemented as setChatSession +
   // setActiveSessionId for backward compatibility with callers that don't
   // yet use the v0.3 active-session pattern. setChatSession updates the
@@ -505,16 +552,22 @@ export const storage = {
     // 4. Enumerate and delete every per-session SecureStore key. Use
     // allSettled so a single failure (e.g. keychain locked mid-reset)
     // doesn't block the rest.
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       sessionKeys.map((k) => SecureStore.deleteItemAsync(k, SECURE_OPTIONS)),
     );
+    const failedKeys = sessionKeys.filter((_, i) => results[i].status === 'rejected');
 
-    // 5. Drop the now-drained session key index. (The removeMany above
-    // skipped it; clear it here.)
-    try {
-      await AsyncStorage.removeItem(ASYNC_KEYS.sessionKeyIndex);
-    } catch {
-      // ignore
+    // 5. Drop the drained session key index — but keep any key whose delete
+    // failed, so a retry can still find it. Dropping it would orphan that
+    // chat in the keychain for good.
+    if (failedKeys.length > 0) {
+      await writeSessionIndex(failedKeys);
+    } else {
+      try {
+        await AsyncStorage.removeItem(ASYNC_KEYS.sessionKeyIndex);
+      } catch {
+        // ignore
+      }
     }
 
     // NOTE: SECURE_KEYS.crisisAudit is intentionally NOT deleted here.
@@ -524,5 +577,11 @@ export const storage = {
     // above partially failed — the partial-failure case is rare but
     // we want listeners to know we attempted a reset.
     emitReset();
+
+    // Surface partial failure so ProfileScreen can tell the user that chat
+    // history is still on the device, instead of claiming success.
+    if (failedKeys.length > 0) {
+      throw new Error(`Reset could not delete ${failedKeys.length} chat session(s)`);
+    }
   },
 };

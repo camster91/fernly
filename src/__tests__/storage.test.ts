@@ -351,3 +351,131 @@ describe('crisis audit cap', () => {
     expect(after.find((e) => e.id === 'old-499')).toBeUndefined();
   });
 });
+
+describe('reset: failed keychain deletes are surfaced, not hidden', () => {
+  it('throws and keeps the failed key indexed so a retry can delete it', async () => {
+    const kept = await storage.createChatSession([message('stuck')]);
+    const gone = await storage.createChatSession([message('ok')]);
+    secureStore.deleteItemAsync.mockImplementation(async (k: string) => {
+      if (k === sessionKey(kept.id)) throw new Error('keychain locked');
+      secureData.delete(k);
+    });
+
+    await expect(storage.clearAll()).rejects.toThrow(/1 chat session/);
+
+    expect(await storage.getChatSession(gone.id)).toBeNull();
+    const index = JSON.parse(asyncData.get(SESSION_INDEX) ?? '[]');
+    expect(index).toEqual([sessionKey(kept.id)]);
+
+    // Retry once the keychain is available again.
+    secureStore.deleteItemAsync.mockImplementation(async (k: string) => {
+      secureData.delete(k);
+    });
+    await storage.clearAll();
+    expect(await storage.getChatSession(kept.id)).toBeNull();
+    expect(asyncData.has(SESSION_INDEX)).toBe(false);
+  });
+});
+
+describe('getAllChatSessions (export + stats)', () => {
+  it('returns every indexed session, not just the active one', async () => {
+    const a = await storage.createChatSession([message('a')]);
+    const b = await storage.createChatSession([message('b')]);
+
+    const all = await storage.getAllChatSessions();
+
+    expect(all.map((s) => s.id).sort()).toEqual([a.id, b.id].sort());
+  });
+
+  it('includes sessions migrated from the legacy blob, once each', async () => {
+    secureData.set(LEGACY_CHATS, JSON.stringify([session('legacy')]));
+
+    const all = await storage.getAllChatSessions();
+
+    expect(all.map((s) => s.id)).toEqual(['legacy']);
+  });
+});
+
+describe('chat writes surface failures', () => {
+  it('appendMessageToSession rejects when the secure write fails', async () => {
+    const s = await storage.createChatSession();
+    secureStore.setItemAsync.mockRejectedValueOnce(new Error('value too large'));
+
+    await expect(storage.appendMessageToSession(s.id, message('big'))).rejects.toThrow();
+  });
+});
+
+describe('getAllChatSessions when legacy migration fails', () => {
+  it('still returns the legacy sessions', async () => {
+    secureData.set(LEGACY_CHATS, JSON.stringify([session('legacy-a'), session('legacy-b')]));
+    secureStore.setItemAsync.mockRejectedValueOnce(new Error('keychain locked'));
+
+    const all = await storage.getAllChatSessions();
+
+    expect(all.map((s) => s.id).sort()).toEqual(['legacy-a', 'legacy-b']);
+    expect(secureData.has(LEGACY_CHATS)).toBe(true);
+  });
+});
+
+describe('session completions', () => {
+  const COMPLETIONS = '@fernly/session-completions';
+  const completion = (n: number) => ({
+    sessionId: `s${n}`,
+    completedAt: '2026-10-18T12:00:00.000Z',
+    seconds: n,
+  });
+
+  it('adds a completion and returns it newest first', async () => {
+    await storage.addCompletion(completion(1));
+    await storage.addCompletion(completion(2));
+    expect(await storage.getCompletions()).toEqual([completion(2), completion(1)]);
+    expect(asyncData.has(COMPLETIONS)).toBe(true);
+  });
+
+  it('caps at the newest 1,000 entries', async () => {
+    const seed = Array.from({ length: 1000 }, (_, i) => completion(i + 1));
+    asyncData.set(COMPLETIONS, JSON.stringify(seed));
+    await storage.addCompletion(completion(5000));
+    const all = await storage.getCompletions();
+    expect(all).toHaveLength(1000);
+    expect(all[0]).toEqual(completion(5000));
+    expect(all[999]).toEqual(completion(999));
+  });
+
+  it('returns [] when the stored JSON is not an array', async () => {
+    asyncData.set(COMPLETIONS, JSON.stringify({ not: 'an array' }));
+    expect(await storage.getCompletions()).toEqual([]);
+  });
+
+  it('returns [] and still accepts new entries when the stored value is not valid JSON', async () => {
+    asyncData.set(COMPLETIONS, '{not json');
+    expect(await storage.getCompletions()).toEqual([]);
+
+    await storage.addCompletion(completion(1));
+    expect(await storage.getCompletions()).toEqual([completion(1)]);
+  });
+
+  it('drops malformed entries on read', async () => {
+    asyncData.set(
+      COMPLETIONS,
+      JSON.stringify([
+        completion(1),
+        null,
+        'x',
+        { sessionId: 1, completedAt: 'a', seconds: 1 },
+        { sessionId: 'a', completedAt: 2, seconds: 1 },
+        { sessionId: 'a', completedAt: 'a', seconds: -1 },
+        { sessionId: 'a', completedAt: 'a', seconds: '5' },
+        { sessionId: 'a', completedAt: 'a', seconds: null },
+      ]),
+    );
+    expect(await storage.getCompletions()).toEqual([completion(1)]);
+  });
+
+  it('clearAll removes completions', async () => {
+    await storage.addCompletion(completion(1));
+    await storage.clearAll();
+    expect(asyncData.has(COMPLETIONS)).toBe(false);
+    expect(await storage.getCompletions()).toEqual([]);
+  });
+});

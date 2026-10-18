@@ -1,16 +1,16 @@
-// Onboarding — 5 questions, then save profile + done.
+// Onboarding — 5 steps, then save profile + done.
+//   0. Before we start (18+ confirmation)
 //   1. Name
 //   2. Mood self-ID
 //   3. Goals (multi-select, max 3)
 //   4. Mascot picker
-//   5. Tone selector
 // Open beta: no paywall, no reminders ask, no privacy gate — we ship the lightest possible path.
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
-import type { Goal, Mascot, MoodScore, Tone, UserProfile } from '../types';
+import type { Goal, Mascot, MoodScore, UserProfile } from '../types';
 
 // v0.9: changed `MOOD_CHOICES` from string[] to { label: MoodScore, text }
 // so the onboarding pick is persisted as a real score (1-6), not a free-
@@ -40,26 +40,6 @@ const MASCOTS: { id: Mascot; emoji: string }[] = [
   { id: 'turtle', emoji: '🐢' },
   { id: 'bee', emoji: '🐝' },
 ];
-const TONES: { id: Tone; label: string; sample: string; bg: string }[] = [
-  {
-    id: 'soft',
-    label: '🕊 Soft',
-    sample: '"That sounds heavy. Want to sit with it?"',
-    bg: colors.lavender50,
-  },
-  {
-    id: 'direct',
-    label: '⚡ Direct',
-    sample: '"Let\'s do the thought record. 3 minutes."',
-    bg: colors.peach50,
-  },
-  {
-    id: 'playful',
-    label: '✨ Playful',
-    sample: '"your brain is doing the thing again lol"',
-    bg: colors.yellow50,
-  },
-];
 
 interface Props {
   onDone: () => void;
@@ -67,6 +47,7 @@ interface Props {
 
 export function OnboardingScreen({ onDone }: Props) {
   const [step, setStep] = useState(0);
+  const [adult, setAdult] = useState(false);
   const [name, setName] = useState('');
   // v0.9: MoodScore (1-6) instead of free-text string. Previously the
   // picked mood was discarded — kept as a 'string | null' with no
@@ -74,16 +55,11 @@ export function OnboardingScreen({ onDone }: Props) {
   const [mood, setMood] = useState<MoodScore | null>(null);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [mascot, setMascot] = useState<Mascot>('moon');
-  const [tone, setTone] = useState<Tone>('soft');
 
   const total = 5;
   function next() {
-    // v0.8: trigger save() at `total - 1` (= 4) so the "Begin" button on
-    // step 5 (the last step) calls save() instead of advancing to a
-    // blank step 6. Previously `step < total` left an off-by-one where
-    // tapping "Begin" on step 4 (the last step with content) set step to
-    // 5, no JSX rendered, and the user was stuck on a blank screen.
-    // See plans/05-full-codebase-review-2026-07-22.md P0-2.
+    // Save at `total - 1` (the last step, index 4) so "Begin" calls save()
+    // instead of advancing to a blank step. See plans/05 P0-2.
     if (step < total - 1) setStep((s) => s + 1);
     else save();
   }
@@ -99,7 +75,8 @@ export function OnboardingScreen({ onDone }: Props) {
     const profile: UserProfile = {
       name: name || 'Friend',
       mascot,
-      tone,
+      // Chat-era field, kept for storage compatibility. Not user-facing.
+      tone: 'soft',
       goals,
       onboarded: true,
       createdAt: new Date().toISOString(),
@@ -113,16 +90,16 @@ export function OnboardingScreen({ onDone }: Props) {
   }
 
   const canAdvance = () => {
-    if (step === 0) return name.trim().length > 0;
-    if (step === 1) return mood !== null;
-    if (step === 2) return goals.length > 0;
-    if (step === 3) return true; // mascot has default
-    if (step === 4) return true; // tone has default
+    if (step === 0) return adult;
+    if (step === 1) return name.trim().length > 0;
+    if (step === 2) return mood !== null;
+    if (step === 3) return goals.length > 0;
+    if (step === 4) return true; // mascot has default
     return true;
   };
 
   return (
-    <ScreenContainer scroll={false}>
+    <ScreenContainer scroll={false} showHelp={false}>
       <View style={styles.dots} accessible={false} accessibilityElementsHidden>
         {Array.from({ length: total }).map((_, i) => (
           <View
@@ -138,7 +115,26 @@ export function OnboardingScreen({ onDone }: Props) {
         showsVerticalScrollIndicator={false}
       >
         {step === 0 && (
-          <Step title="What should Fernly call you?" eyebrow="STEP 1 OF 5">
+          <Step title="Before we start" eyebrow="STEP 1 OF 5">
+            <Text style={styles.sub}>Fernly is free forever. No ads. No account.</Text>
+            <Pressable
+              onPress={() => setAdult((a) => !a)}
+              accessibilityRole="checkbox"
+              accessibilityLabel="I'm 18 or older"
+              accessibilityState={{ checked: adult }}
+              style={styles.checkRow}
+            >
+              <View style={[styles.checkBox, adult && styles.checkBoxOn]}>
+                {adult && <Text style={styles.checkMark}>✓</Text>}
+              </View>
+              <Text style={styles.checkLabel}>I'm 18 or older</Text>
+            </Pressable>
+            <Text style={styles.note}>Fernly is made for adults 18 and over.</Text>
+          </Step>
+        )}
+
+        {step === 1 && (
+          <Step title="What should Fernly call you?" eyebrow="STEP 2 OF 5">
             <TextInput
               value={name}
               onChangeText={setName}
@@ -154,8 +150,8 @@ export function OnboardingScreen({ onDone }: Props) {
           </Step>
         )}
 
-        {step === 1 && (
-          <Step title="Right now, what's closest?" eyebrow="STEP 2 OF 5">
+        {step === 2 && (
+          <Step title="Right now, what's closest?" eyebrow="STEP 3 OF 5">
             <Text style={styles.sub}>Helps Fernly meet you where you are.</Text>
             <View style={styles.pillRow}>
               {MOOD_CHOICES.map((m) => (
@@ -177,8 +173,8 @@ export function OnboardingScreen({ onDone }: Props) {
           </Step>
         )}
 
-        {step === 2 && (
-          <Step title="What are you hoping for?" eyebrow="STEP 3 OF 5">
+        {step === 3 && (
+          <Step title="What are you hoping for?" eyebrow="STEP 4 OF 5">
             <Text style={styles.sub}>Pick up to 3.</Text>
             <View style={styles.pillRow}>
               {GOALS.map((g) => (
@@ -200,9 +196,9 @@ export function OnboardingScreen({ onDone }: Props) {
           </Step>
         )}
 
-        {step === 3 && (
-          <Step title="Pick a friend." eyebrow="STEP 4 OF 5">
-            <Text style={styles.sub}>This is who you'll chat with.</Text>
+        {step === 4 && (
+          <Step title="Pick a friend." eyebrow="STEP 5 OF 5">
+            <Text style={styles.sub}>This is your companion in the app.</Text>
             <View style={styles.mascotGrid}>
               {MASCOTS.map((m) => (
                 <Pressable
@@ -214,36 +210,6 @@ export function OnboardingScreen({ onDone }: Props) {
                   style={[styles.mascotBox, mascot === m.id && styles.mascotBoxActive]}
                 >
                   <Text style={styles.mascotEmoji}>{m.emoji}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </Step>
-        )}
-
-        {step === 4 && (
-          <Step title="How should Fernly talk?" eyebrow="STEP 5 OF 5">
-            {/* v0.9: "Change anytime in settings" was a lie in v0.8 —
-                settings is forward-compatible (Settings route is reserved
-                in RootStackParamList) but not yet shipped. Real options
-                are: (a) reset Fernly and re-onboard, or (b) wait for v1.
-                See plans/05 P1-20. */}
-            <Text style={styles.sub}>Change anytime by resetting Fernly from your Profile.</Text>
-            <View style={{ gap: 10 }}>
-              {TONES.map((tn) => (
-                <Pressable
-                  key={tn.id}
-                  onPress={() => setTone(tn.id)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${tn.label} tone. ${tn.sample}`}
-                  accessibilityState={{ selected: tone === tn.id }}
-                  style={[
-                    styles.toneCard,
-                    { backgroundColor: tn.bg },
-                    tone === tn.id && styles.toneCardActive,
-                  ]}
-                >
-                  <Text style={styles.toneLabel}>{tn.label}</Text>
-                  <Text style={styles.toneSample}>{tn.sample}</Text>
                 </Pressable>
               ))}
             </View>
@@ -317,6 +283,22 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
   },
 
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
+  checkBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: colors.line,
+    backgroundColor: colors.paper2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkBoxOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  checkMark: { color: colors.paper, fontWeight: '800', fontSize: 16 },
+  note: { ...t.small, color: colors.textSoft, marginTop: space.s3 },
+  checkLabel: { ...t.bodyBold, color: colors.text },
+
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   pill: {
     paddingHorizontal: 16,
@@ -343,11 +325,6 @@ const styles = StyleSheet.create({
   },
   mascotBoxActive: { borderColor: colors.accent },
   mascotEmoji: { fontSize: 48 },
-
-  toneCard: { padding: 14, borderRadius: radius.md, borderWidth: 2, borderColor: 'transparent' },
-  toneCardActive: { borderColor: colors.accent },
-  toneLabel: { fontWeight: '700', fontSize: 16, color: colors.text, marginBottom: 4 },
-  toneSample: { fontSize: 13, color: colors.textSoft, fontStyle: 'italic' },
 
   dots: {
     flexDirection: 'row',

@@ -55,7 +55,7 @@ export function MoodCheckInScreen() {
   }
 
   return (
-    <ScreenContainer>
+    <ScreenContainer showHelp={false}>
       <View style={styles.header}>
         <Text style={styles.eyebrow}>
           {greetingForHour(new Date().getHours()).toUpperCase()} CHECK-IN

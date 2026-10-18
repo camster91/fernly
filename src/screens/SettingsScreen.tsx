@@ -1,4 +1,4 @@
-// Settings — edit mascot / tone / goals, export your data, see legal &
+// Settings — edit mascot / goals, export your data, see legal &
 // safety info, send feedback. Reachable from ProfileScreen's
 // actionable rows; routed via RootStackParamList.Settings.
 //
@@ -16,7 +16,7 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { Card } from '../components/Card';
 import { colors, space, type as t, radius } from '../theme';
 import { storage } from '../storage';
-import type { Goal, Mascot, MoodScore, Tone, UserProfile } from '../types';
+import type { Goal, Mascot, MoodScore, UserProfile } from '../types';
 
 type Props = {
   navigation: { goBack: () => void };
@@ -27,12 +27,6 @@ const MASCOTS: { id: Mascot; emoji: string }[] = [
   { id: 'fox', emoji: '🦊' },
   { id: 'turtle', emoji: '🐢' },
   { id: 'bee', emoji: '🐝' },
-];
-
-const TONES: { id: Tone; label: string; sample: string }[] = [
-  { id: 'soft', label: 'Soft', sample: 'Want to sit with it together?' },
-  { id: 'direct', label: 'Direct', sample: "Let's do the thought record." },
-  { id: 'playful', label: 'Playful', sample: 'your brain is doing the thing again lol' },
 ];
 
 const GOALS: { id: Goal; label: string }[] = [
@@ -48,7 +42,6 @@ const GOALS: { id: Goal; label: string }[] = [
 export function SettingsScreen({ navigation }: Props) {
   const [original, setOriginal] = useState<UserProfile | null>(null);
   const [mascot, setMascot] = useState<Mascot>('moon');
-  const [tone, setTone] = useState<Tone>('soft');
   const [goals, setGoals] = useState<Goal[]>([]);
 
   useEffect(() => {
@@ -57,7 +50,6 @@ export function SettingsScreen({ navigation }: Props) {
       if (!p) return;
       setOriginal(p);
       setMascot(p.mascot);
-      setTone(p.tone);
       setGoals([...p.goals]);
     })();
   }, []);
@@ -65,7 +57,6 @@ export function SettingsScreen({ navigation }: Props) {
   const dirty =
     original &&
     (mascot !== original.mascot ||
-      tone !== original.tone ||
       JSON.stringify(goals) !== JSON.stringify([...original.goals].sort()));
 
   const toggleGoal = (id: Goal) =>
@@ -80,7 +71,6 @@ export function SettingsScreen({ navigation }: Props) {
     const next: UserProfile = {
       ...original,
       mascot,
-      tone,
       goals,
       ...(('initialMood' in original && original.initialMood
         ? { initialMood: original.initialMood }
@@ -91,19 +81,27 @@ export function SettingsScreen({ navigation }: Props) {
     Alert.alert('Saved', 'Your preferences are updated.', [
       { text: 'OK', onPress: () => navigation.goBack() },
     ]);
-  }, [original, mascot, tone, goals, navigation]);
+  }, [original, mascot, goals, navigation]);
 
   const exportData = useCallback(async () => {
     try {
       const moods = await storage.getMoods();
-      const chats = await storage.getChats();
+      const chats = await storage.getAllChatSessions();
       const session = await storage.getActiveSessionId();
       const profile = await storage.getProfile();
+      const completions = await storage.getCompletions();
       // JSON export — the simplest portable format. Round-trip via
       // storage.import is out of v0 scope (import = a different
       // security audit, different risk model).
       const json = JSON.stringify(
-        { profile, moods, chats, activeSessionId: session, exportedAt: new Date().toISOString() },
+        {
+          profile,
+          moods,
+          chats,
+          completions,
+          activeSessionId: session,
+          exportedAt: new Date().toISOString(),
+        },
         null,
         2,
       );
@@ -123,12 +121,12 @@ export function SettingsScreen({ navigation }: Props) {
   const showLegal = useCallback(() => {
     Alert.alert(
       'Fernly — legal & safety',
-      'Fernly is not therapy. If you are in crisis, contact 988 (US) or 116 123 (UK).\n\nFull Disclaimer, Privacy Policy, and EULA ship in a future update. Open-source decision is on the roadmap.\n\nNote: your local chat history, mood entries, and profile are deleted by Reset. The crisis-pattern audit log (last 500 entries) is retained for safety review and is not user-editable.',
+      'Fernly is not therapy. If you are in crisis, contact 988 (US) or 116 123 (UK).\n\nFull Disclaimer, Privacy Policy, and EULA ship in a future update. Open-source decision is on the roadmap.\n\nNote: your local mood entries, profile, meditation history, and any older saved conversations are deleted by Reset. The crisis-pattern audit log (last 500 entries) is retained for safety review and is not user-editable.',
     );
   }, []);
 
   return (
-    <ScreenContainer scroll>
+    <ScreenContainer scroll showHelp={false}>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 100 }}
@@ -138,7 +136,7 @@ export function SettingsScreen({ navigation }: Props) {
           <Text style={styles.eyebrow}>SETTINGS</Text>
           <Text style={styles.title}>Your preferences</Text>
           <Text style={styles.sub}>
-            Change your mascot, tone, or goals. Changes save with the button at the bottom.
+            Change your mascot or goals. Changes save with the button at the bottom.
           </Text>
         </View>
 
@@ -162,24 +160,6 @@ export function SettingsScreen({ navigation }: Props) {
               </Pressable>
             ))}
           </View>
-        </Card>
-
-        {/* Tone picker — 3 rows. */}
-        <Card>
-          <Text style={styles.sectionLabel}>TONE</Text>
-          {TONES.map((tn) => (
-            <Pressable
-              key={tn.id}
-              onPress={() => setTone(tn.id)}
-              accessibilityRole="button"
-              accessibilityLabel={`Set tone to ${tn.label}`}
-              accessibilityState={{ selected: tone === tn.id }}
-              style={[styles.toneRow, tone === tn.id && styles.toneRowActive]}
-            >
-              <Text style={styles.toneLabel}>{tn.label}</Text>
-              <Text style={styles.toneSample}>"{tn.sample}"</Text>
-            </Pressable>
-          ))}
         </Card>
 
         {/* Goals — multi-select, max 3. */}
@@ -225,7 +205,7 @@ export function SettingsScreen({ navigation }: Props) {
             onPress={exportData}
             accessibilityRole="button"
             accessibilityLabel="Export your data"
-            accessibilityHint="Shares a JSON dump of your profile, moods, and chats"
+            accessibilityHint="Shares a JSON dump of your profile, moods, meditation history, and any older chat history"
             style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
           >
             <Text style={styles.actionText}>Export your data</Text>
@@ -296,18 +276,6 @@ const styles = StyleSheet.create({
   choiceEmoji: { fontSize: 32, marginBottom: 4 },
   choiceLabel: { ...t.small, color: colors.text, fontWeight: '600' },
   choiceLabelActive: { color: colors.ink },
-
-  toneRow: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: radius.sm,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  toneRowActive: { borderColor: colors.ink, backgroundColor: colors.lavender50 },
-  toneLabel: { ...t.bodyBold, color: colors.text },
-  toneSample: { ...t.small, color: colors.textSoft, marginTop: 2 },
 
   goalRow: {
     paddingVertical: 12,

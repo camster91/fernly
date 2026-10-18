@@ -14,6 +14,7 @@
 import React, { useEffect } from 'react';
 import { Dimensions, Platform, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { setAudioModeAsync } from 'expo-audio';
 import { RootNav } from './src/nav/RootNav';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { hydrateVerifiedUrls, verifyResourceReachability } from './src/safety/crisis';
@@ -34,6 +35,21 @@ const CRISIS_RESOURCE_URLS: string[] = [
 const WEB_PHONE_WIDTH = 414;
 
 export default function App() {
+  useEffect(() => {
+    // Audio mode for guided meditations: play with the silent switch on,
+    // keep playing in the background, and own the audio session so lock
+    // screen controls work. Best-effort; never crash startup.
+    try {
+      setAudioModeAsync({
+        playsInSilentMode: true,
+        shouldPlayInBackground: true,
+        interruptionMode: 'doNotMix',
+      }).catch(() => undefined);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     // v0.8 (F-P1-10): hydrate the verifiedUrls cache from AsyncStorage
     // before firing the HEAD check so URLs verified <6h ago don't flash

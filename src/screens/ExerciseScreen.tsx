@@ -17,7 +17,7 @@ export function ExerciseScreen() {
 
   if (!ex)
     return (
-      <ScreenContainer>
+      <ScreenContainer showHelp={false}>
         <Text>Exercise not found.</Text>
       </ScreenContainer>
     );
@@ -25,7 +25,7 @@ export function ExerciseScreen() {
   if (ex.id === 'box-breathing') return <BoxBreathingScreen />;
 
   return (
-    <ScreenContainer>
+    <ScreenContainer showHelp={false}>
       <View style={styles.header}>
         <Text style={styles.eyebrow}>
           {ex.modality} · {ex.durationMin} MIN
@@ -151,7 +151,7 @@ function BoxBreathingScreen() {
           : 1.0;
 
   return (
-    <ScreenContainer scroll={false}>
+    <ScreenContainer scroll={false} showHelp={false}>
       <View style={styles.header}>
         <Text style={styles.eyebrow}>
           BODY · 4 MIN · CYCLE {Math.min(completed + 1, TOTAL_CYCLES)} OF {TOTAL_CYCLES}
