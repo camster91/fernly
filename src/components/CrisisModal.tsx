@@ -1,17 +1,15 @@
-// Crisis modal — appears as an overlay over the chat when detectCrisis fires.
-// The user MUST tap one of the resources or complete the safety confirmation;
-// there is no path forward to the chat without acknowledging.
+// Crisis help modal — opened by the "Need help now?" button (HelpButton) that
+// appears on every tab. It lists free, confidential helplines for the user's
+// locale and can be closed at any time with the Close button (or Android back).
 //
-// v0.5:
 //   - Locale wiring via expo-localization. Crisis resources match the
 //     user's device locale (en-US, en-GB, es, fr, pt, de, fallback IASP).
-//   - Open failures show inline guidance: a tap during crisis must not
-//     silently no-op. (No canOpenURL pre-check — on Android 11+ it returns
-//     false for tel:/sms: unless the manifest declares them.)
+//   - Open failures show inline guidance: a tap must not silently no-op.
+//     (No canOpenURL pre-check — on Android 11+ it returns false for
+//     tel:/sms: unless the manifest declares them.)
 //   - SMS URL uses Platform.OS branch (iOS '&body=' vs Android '?body=').
 //   - Reachability banner warns when crisis-resource URLs are stale.
-//   - Dismiss requires a 1.5s long-press with visible progress bar.
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { getLocales } from 'expo-localization';
 import {
   AccessibilityInfo,
@@ -35,10 +33,6 @@ interface Props {
 
 // 7 days in ms — banner triggers if no HEAD-check has succeeded in this window.
 const REACHABILITY_STALE_MS = 7 * 24 * 60 * 60 * 1000;
-
-// 1.5s long-press required to dismiss. A single tap, accidental swipe, or
-// back gesture cannot close the modal.
-const DISMISS_LONGPRESS_MS = 1500;
 
 /** Pick the best locale for crisis resources from the device's preferred
  * locales. The crisis module routes by region (US, CA, GB, …), then language.
@@ -67,16 +61,11 @@ export function CrisisModal({ visible, locale, onDismiss }: Props) {
   // If the caller didn't pass a locale, derive from the device prefs.
   // Pinned at mount — we don't re-render on OS locale changes mid-modal.
   const effectiveLocale = locale ?? pickLocale();
-  // Memoized: `resources` is an effect dependency, and a fresh array on every
-  // render re-ran the effect, whose cleanup cleared the dismiss hold timer.
+  // Memoized: `resources` is an effect dependency; a fresh array on every
+  // render would re-run the effect (and re-announce).
   const resources = useMemo(() => crisisResourcesFor(effectiveLocale), [effectiveLocale]);
   const [openError, setOpenError] = useState<string | null>(null);
   const [unreachableBanner, setUnreachableBanner] = useState(false);
-
-  // Long-press state for the dismiss button.
-  const [pressing, setPressing] = useState(false);
-  const [holdProgress, setHoldProgress] = useState(0);
-  const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Decide banner state on mount/visibility change. Also announce the
   // modal opening to VoiceOver/TalkBack so screen-reader users don't
@@ -84,9 +73,6 @@ export function CrisisModal({ visible, locale, onDismiss }: Props) {
   useEffect(() => {
     if (!visible) {
       setOpenError(null);
-      setPressing(false);
-      setHoldProgress(0);
-      if (holdTimerRef.current) clearInterval(holdTimerRef.current);
       return;
     }
     const now = Date.now();
@@ -102,42 +88,9 @@ export function CrisisModal({ visible, locale, onDismiss }: Props) {
     // re-announce. We use the cleanup to noop; if visible flips false
     // and back true, the announcement fires again which is what we want.
     AccessibilityInfo.announceForAccessibility(
-      'Safety resources. Choose a helpline below, or hold the bottom button for one and a half seconds to return to chat.',
+      'Help is available. Choose a helpline below, or use the Close button when you are done.',
     );
-
-    // v0.8: unmount cleanup. Without this, if the component unmounts
-    // mid-press (route pop, parent re-render swap), holdTimerRef
-    // keeps running and fires setState on an unmounted component for
-    // up to 1.5s. The visible===false branch above only catches the
-    // normal dismiss flow; this catches the unmount path too.
-    return () => {
-      if (holdTimerRef.current) clearInterval(holdTimerRef.current);
-    };
   }, [visible, resources]);
-
-  function startHold() {
-    setPressing(true);
-    setHoldProgress(0);
-    const start = Date.now();
-    if (holdTimerRef.current) clearInterval(holdTimerRef.current);
-    holdTimerRef.current = setInterval(() => {
-      const elapsed = Date.now() - start;
-      const pct = Math.min(100, (elapsed / DISMISS_LONGPRESS_MS) * 100);
-      setHoldProgress(pct);
-      if (pct >= 100) {
-        if (holdTimerRef.current) clearInterval(holdTimerRef.current);
-        setPressing(false);
-        setHoldProgress(0);
-        onDismiss();
-      }
-    }, 50);
-  }
-
-  function cancelHold() {
-    if (holdTimerRef.current) clearInterval(holdTimerRef.current);
-    setPressing(false);
-    setHoldProgress(0);
-  }
 
   async function open(resource: (typeof resources)[number]) {
     setOpenError(null);
@@ -175,26 +128,21 @@ export function CrisisModal({ visible, locale, onDismiss }: Props) {
       visible={visible}
       transparent
       animationType="fade"
-      // accessibilityViewIsModal traps screen-reader focus inside the
-      // modal so TalkBack swipe (Android) and VoiceOver swipe (iOS)
-      // cannot escape to the underlying chat without dismissing. The
-      // user MUST complete the long-press on the dismiss button.
+      // accessibilityViewIsModal keeps screen-reader focus inside the modal
+      // until it is closed. Android back closes it via onRequestClose.
       accessibilityViewIsModal={true}
+      onRequestClose={onDismiss}
     >
-      {/* No onRequestClose — Android back / iOS swipe-down cannot dismiss.
-          The user MUST complete the long-press on the dismiss button. */}
       <View style={styles.backdrop}>
         <View style={styles.card}>
           <View style={styles.iconWrap}>
             <Text style={styles.icon}>💛</Text>
           </View>
           <Text style={styles.title}>You matter.</Text>
-          <Text style={styles.subtitle}>
-            Right now, please reach out to a human trained for this.
-          </Text>
+          <Text style={styles.subtitle}>You don't have to go through this alone.</Text>
           <Text style={styles.body}>
-            I'm an AI. I can't help in the way you deserve right now — and the person best placed to
-            help is one tap away.
+            If you're struggling or not safe right now, talking to someone can help. These lines are
+            free and confidential.
           </Text>
 
           {unreachableBanner && (
@@ -268,31 +216,14 @@ export function CrisisModal({ visible, locale, onDismiss }: Props) {
             })}
           </View>
 
-          {/* Long-press dismiss — single tap cannot close the modal. */}
           <Pressable
-            onPressIn={startHold}
-            onPressOut={cancelHold}
+            onPress={onDismiss}
             accessibilityRole="button"
-            accessibilityLabel="Hold for one and a half seconds to close this safety message and return to chat"
-            accessibilityState={{ busy: pressing }}
-            accessibilityValue={{
-              min: 0,
-              max: 100,
-              now: Math.round(holdProgress),
-            }}
+            accessibilityLabel="Close"
+            accessibilityHint="Closes the help screen"
             style={styles.close}
           >
-            <Text style={styles.closeText} accessibilityLiveRegion="polite">
-              {pressing
-                ? `Keep holding… ${Math.round(DISMISS_LONGPRESS_MS / 1000 - (holdProgress / 100) * (DISMISS_LONGPRESS_MS / 1000))}s`
-                : "Hold to confirm you're safe for now"}
-            </Text>
-            <View style={styles.holdTrack}>
-              <View style={[styles.holdFill, { width: `${holdProgress}%` }]} />
-              {/* 50% and 100% tick marks — non-color-only progress signal */}
-              <View style={[styles.holdTick, { left: '50%' }]} />
-              <View style={[styles.holdTick, { right: 0 }]} />
-            </View>
+            <Text style={styles.closeText}>Close</Text>
           </Pressable>
 
           {/*
@@ -404,31 +335,14 @@ const styles = StyleSheet.create({
     fontFamily: 'Menlo',
   },
 
-  close: { paddingVertical: 14, paddingHorizontal: 8, alignItems: 'center' },
-  // closeText was colors.textMuted on paper = 4.27:1, fails AA-body.
-  // The dismiss affordance is the one that should be most clearly
-  // readable; bump to colors.text (14.2:1).
-  closeText: { ...t.small, fontWeight: '700', color: colors.text, marginBottom: 6 },
-  holdTrack: {
-    width: 120,
-    // Bumped from 4pt to 8pt — the prior 4pt track was visually
-    // invisible to low-vision users at 200% font scale, and the
-    // progress indicator is the only non-color signal of hold state.
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.line,
-    overflow: 'hidden',
-    position: 'relative',
+  close: {
+    minHeight: 44,
+    minWidth: 44,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
   },
-  holdFill: { height: '100%', backgroundColor: colors.warn },
-  // Tick marks at 50% and 100% give non-color-only feedback for
-  // users who can't perceive the progress fill (color-blind, very
-  // low vision). Rendered as a thin overlay on the track.
-  holdTick: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: 2,
-    backgroundColor: colors.text,
-  },
+  closeText: { ...t.bodyBold, color: colors.text },
 });
