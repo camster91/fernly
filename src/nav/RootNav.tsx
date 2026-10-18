@@ -17,6 +17,7 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { MoodCheckInScreen } from '../screens/MoodCheckInScreen';
+import { PlayerScreen } from '../screens/PlayerScreen';
 import { colors, type as t } from '../theme';
 import { storage, onStorageReset } from '../storage';
 
@@ -33,6 +34,7 @@ export type RootStackParamList = {
   Tabs: NavigatorScreenParams<TabParamList>;
   MoodCheckIn: undefined;
   Exercise: { exerciseId: string };
+  Player: { sessionId: string };
   // Settings is reserved for a future in-app settings screen (privacy,
   // data controls, tone change). Today the ProfileScreen "Legal & safety"
   // row shows an Alert.alert placeholder; the route type is forward-
@@ -180,6 +182,7 @@ export function RootNav() {
               options={{ presentation: 'modal' }}
             />
             <Stack.Screen name="Exercise" component={ExerciseScreen} />
+            <Stack.Screen name="Player" component={PlayerScreen} />
             {/* v0.9: real Settings screen — replaces the Alert.alert
                 placeholders that ProfileScreen was triggering for
                 "Export your data" / "Legal & safety" / etc. */}

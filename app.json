@@ -31,6 +31,14 @@
         "resizeMode": "contain",
         "backgroundColor": "#F4F1FB"
       }
-    }
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true
+        }
+      ]
+    ]
   }
 }
